@@ -1,0 +1,25 @@
+{
+  "name": "civicrise",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b --noEmit && vite build",
+    "preview": "vite preview",
+    "review:pack": "powershell -ExecutionPolicy Bypass -File .\\scripts\\refresh-review-pack.ps1",
+    "smoke:sim": "tsx ./scripts/smoke-sim.ts"
+  },
+  "dependencies": {
+    "react": "^19.2.1",
+    "react-dom": "^19.2.1"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.2",
+    "@vitejs/plugin-react": "^5.1.0",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.3",
+    "vite": "^8.0.8"
+  }
+}
