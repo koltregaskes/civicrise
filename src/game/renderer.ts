@@ -1,5 +1,11 @@
 import { getScenario } from "./scenario";
 import { evaluatePlacement, getTile } from "./simulation";
+import {
+  drawTile as drawTilesetTile,
+  getTile as getTilesetTile,
+  loadTileset,
+  pickRoadTile,
+} from "./tileset";
 import { GameState, GridPoint, ToolId } from "./types";
 
 const TILE_WIDTH = 78;
@@ -235,6 +241,15 @@ function drawTerrain(
   const tile = getTile(state, point.x, point.y);
   const halfWidth = (TILE_WIDTH / 2) * viewport.scale;
   const halfHeight = (TILE_HEIGHT / 2) * viewport.scale;
+
+  // Real isometric tile art when the tileset has loaded; vector drawing otherwise.
+  const artName = tile.terrain === "water" ? "water" : tile.terrain === "quay" ? "dirt" : "grass";
+  const art = getTilesetTile(artName);
+  if (art) {
+    drawTilesetTile(ctx, art, screen.x, screen.y, TILE_WIDTH * viewport.scale);
+    return;
+  }
+
   drawDiamond(ctx, screen.x, screen.y, halfWidth, halfHeight);
 
   if (tile.terrain === "water") {
@@ -296,6 +311,22 @@ function drawRoad(
 ): void {
   const tile = getTile(state, point.x, point.y);
   if (!tile.road) {
+    return;
+  }
+
+  // Real road art, picking the piece that matches the connected neighbours.
+  const isRoad = (x: number, y: number) =>
+    x >= 0 && y >= 0 && x < state.width && y < state.height && getTile(state, x, y).road;
+  const roadArt = getTilesetTile(
+    pickRoadTile(
+      isRoad(point.x, point.y - 1),
+      isRoad(point.x + 1, point.y),
+      isRoad(point.x, point.y + 1),
+      isRoad(point.x - 1, point.y),
+    ),
+  );
+  if (roadArt) {
+    drawTilesetTile(ctx, roadArt, screen.x, screen.y, TILE_WIDTH * viewport.scale);
     return;
   }
 
@@ -706,6 +737,9 @@ export function renderDistrict(
   if (!context) {
     return;
   }
+
+  // Begins loading the isometric tile art on first render; later frames pick it up.
+  loadTileset();
 
   const dpr = window.devicePixelRatio || 1;
   const width = canvas.clientWidth || 1000;
