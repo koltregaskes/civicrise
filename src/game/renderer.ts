@@ -446,157 +446,414 @@ function drawZoneLot(
   }
 }
 
+type TileData = ReturnType<typeof getTile>;
+
+/** Stable 0..1 value per tile, so each lot keeps its look from frame to frame. */
+function lotHash(point: GridPoint, salt: number): number {
+  const value = Math.sin(point.x * 127.1 + point.y * 311.7 + salt * 74.7) * 43758.5453;
+  return value - Math.floor(value);
+}
+
+function developmentTier(tile: TileData): number {
+  return tile.development < 18 ? 0 : tile.development < 44 ? 1 : tile.development < 74 ? 2 : 3;
+}
+
+interface Tones {
+  top: string;
+  left: string;
+  right: string;
+}
+
+/**
+ * Adds a grid of windows to the two visible walls of a box drawn by drawExtrudedDiamond.
+ * Window positions are found in wall space (u along the wall, v down from the eaves), so they
+ * follow the isometric slant. Each colour is filled as one path to keep the draw count low.
+ */
+function drawWallWindows(
+  ctx: CanvasRenderingContext2D,
+  centerX: number,
+  baseY: number,
+  halfWidth: number,
+  halfHeight: number,
+  height: number,
+  rows: number,
+  cols: number,
+  point: GridPoint,
+  glass: string,
+  lit: string,
+  litShare: number,
+  top = 0.14,
+  bottom = 0.1,
+): void {
+  if (rows <= 0 || cols <= 0) {
+    return;
+  }
+
+  const leftWall = (u: number, v: number): ScreenPoint => ({
+    x: centerX - halfWidth + u * halfWidth,
+    y: baseY - height + u * halfHeight + v * height,
+  });
+  const rightWall = (u: number, v: number): ScreenPoint => ({
+    x: centerX + u * halfWidth,
+    y: baseY + halfHeight - height - u * halfHeight + v * height,
+  });
+
+  const paths = { glass: new Path2D(), lit: new Path2D() };
+  const rowSpan = (1 - top - bottom) / rows;
+  const colSpan = 0.84 / cols;
+
+  [leftWall, rightWall].forEach((wall, wallIndex) => {
+    for (let row = 0; row < rows; row += 1) {
+      for (let col = 0; col < cols; col += 1) {
+        const u0 = 0.08 + col * colSpan + colSpan * 0.18;
+        const u1 = 0.08 + (col + 1) * colSpan - colSpan * 0.18;
+        const v0 = top + row * rowSpan + rowSpan * 0.2;
+        const v1 = top + (row + 1) * rowSpan - rowSpan * 0.18;
+        const a = wall(u0, v0);
+        const b = wall(u1, v0);
+        const c = wall(u1, v1);
+        const d = wall(u0, v1);
+        const target = lotHash(point, 11 + wallIndex * 31 + row * 7 + col * 3) < litShare ? paths.lit : paths.glass;
+        target.moveTo(a.x, a.y);
+        target.lineTo(b.x, b.y);
+        target.lineTo(c.x, c.y);
+        target.lineTo(d.x, d.y);
+        target.closePath();
+      }
+    }
+  });
+
+  ctx.fillStyle = glass;
+  ctx.fill(paths.glass);
+  ctx.fillStyle = lit;
+  ctx.fill(paths.lit);
+}
+
+/**
+ * Gable roof on a box whose top face is centred on (centerX, topY). The ridge runs from the
+ * up-left edge to the down-right edge, so the front-left slope and the down-right gable end
+ * face the viewer.
+ */
+function drawGableRoof(
+  ctx: CanvasRenderingContext2D,
+  centerX: number,
+  topY: number,
+  halfWidth: number,
+  halfHeight: number,
+  rise: number,
+  slopeLight: string,
+  slopeDark: string,
+  gable: string,
+): void {
+  const overhang = 1.12;
+  const hw = halfWidth * overhang;
+  const hh = halfHeight * overhang;
+  const t = { x: centerX, y: topY - hh };
+  const r = { x: centerX + hw, y: topY };
+  const b = { x: centerX, y: topY + hh };
+  const l = { x: centerX - hw, y: topY };
+  const ridgeBack = { x: (t.x + l.x) / 2, y: (t.y + l.y) / 2 - rise };
+  const ridgeFront = { x: (r.x + b.x) / 2, y: (r.y + b.y) / 2 - rise };
+
+  ctx.fillStyle = slopeLight;
+  ctx.beginPath();
+  ctx.moveTo(t.x, t.y);
+  ctx.lineTo(r.x, r.y);
+  ctx.lineTo(ridgeFront.x, ridgeFront.y);
+  ctx.lineTo(ridgeBack.x, ridgeBack.y);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = gable;
+  ctx.beginPath();
+  ctx.moveTo(r.x - (hw - halfWidth), r.y + (hh - halfHeight) * 0.2);
+  ctx.lineTo(b.x, b.y - (hh - halfHeight));
+  ctx.lineTo(ridgeFront.x, ridgeFront.y + rise * 0.12);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = slopeDark;
+  ctx.beginPath();
+  ctx.moveTo(l.x, l.y);
+  ctx.lineTo(b.x, b.y);
+  ctx.lineTo(ridgeFront.x, ridgeFront.y);
+  ctx.lineTo(ridgeBack.x, ridgeBack.y);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.22)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(ridgeBack.x, ridgeBack.y);
+  ctx.lineTo(ridgeFront.x, ridgeFront.y);
+  ctx.stroke();
+}
+
+const HOUSE_WALLS: Tones[] = [
+  { top: "#f3eadb", left: "#c9b89c", right: "#e4d6bd" },
+  { top: "#eef1e6", left: "#b9c4ae", right: "#d7e0cb" },
+  { top: "#f2ddd0", left: "#c49f8a", right: "#e0bfaa" },
+  { top: "#e3e9ef", left: "#a9b6c2", right: "#c9d4de" },
+];
+const HOUSE_ROOFS = [
+  { light: "#c9694d", dark: "#9a4a35" },
+  { light: "#5f6f80", dark: "#45525f" },
+  { light: "#8d5a3c", dark: "#6a412b" },
+  { light: "#4f7a6a", dark: "#3a5b4f" },
+];
+
+function drawHouse(
+  ctx: CanvasRenderingContext2D,
+  centerX: number,
+  baseY: number,
+  scale: number,
+  point: GridPoint,
+  salt: number,
+  size: number,
+): void {
+  const walls = HOUSE_WALLS[Math.floor(lotHash(point, salt) * HOUSE_WALLS.length)];
+  const roof = HOUSE_ROOFS[Math.floor(lotHash(point, salt + 1) * HOUSE_ROOFS.length)];
+  const hw = 11 * size * scale;
+  const hh = 6 * size * scale;
+  const h = (10 + lotHash(point, salt + 2) * 4) * size * scale;
+
+  drawExtrudedDiamond(ctx, centerX, baseY, hw, hh, h, walls.top, walls.left, walls.right);
+  // Upstairs windows on both walls, and a front door low in the middle of the right-hand wall.
+  drawWallWindows(ctx, centerX, baseY, hw, hh, h, 1, 2, point, "rgba(44, 70, 92, 0.85)", "#ffe3a1", 0.35, 0.16, 0.5);
+  const doorHalf = 0.09;
+  const doorPoint = (u: number, v: number): ScreenPoint => ({
+    x: centerX + u * hw,
+    y: baseY + hh - h - u * hh + v * h,
+  });
+  const d0 = doorPoint(0.5 - doorHalf, 0.55);
+  const d1 = doorPoint(0.5 + doorHalf, 0.55);
+  const d2 = doorPoint(0.5 + doorHalf, 1);
+  const d3 = doorPoint(0.5 - doorHalf, 1);
+  ctx.fillStyle = "rgba(78, 52, 38, 0.92)";
+  ctx.beginPath();
+  ctx.moveTo(d0.x, d0.y);
+  ctx.lineTo(d1.x, d1.y);
+  ctx.lineTo(d2.x, d2.y);
+  ctx.lineTo(d3.x, d3.y);
+  ctx.closePath();
+  ctx.fill();
+  drawGableRoof(ctx, centerX, baseY - h, hw, hh, 8 * size * scale, roof.light, roof.dark, walls.right);
+}
+
 function drawResidential(
   ctx: CanvasRenderingContext2D,
-  tile: ReturnType<typeof getTile>,
+  tile: TileData,
+  point: GridPoint,
   screen: ScreenPoint,
   viewport: Viewport,
 ): void {
-  const tier = tile.development < 18 ? 0 : tile.development < 44 ? 1 : tile.development < 74 ? 2 : 3;
+  const tier = developmentTier(tile);
   if (tier === 0) {
     return;
   }
 
-  const width = 12 * viewport.scale;
-  const depth = 7 * viewport.scale;
-  const firstHeight = (16 + tier * 8) * viewport.scale;
-  const secondHeight = tier >= 2 ? (10 + tier * 6) * viewport.scale : 0;
+  const s = viewport.scale;
 
-  drawExtrudedDiamond(
-    ctx,
-    screen.x - 10 * viewport.scale,
-    screen.y + 1 * viewport.scale,
-    width,
-    depth,
-    firstHeight,
-    "#f0f4ee",
-    "#bcc8bc",
-    "#dbe7db",
-  );
-
-  if (secondHeight > 0) {
-    drawExtrudedDiamond(
-      ctx,
-      screen.x + 10 * viewport.scale,
-      screen.y + 2 * viewport.scale,
-      width * 0.78,
-      depth * 0.76,
-      secondHeight,
-      "#d8f1e4",
-      "#9fc5b4",
-      "#b7dcc9",
-    );
+  if (tier === 1) {
+    // A single house with a garden hedge.
+    ctx.fillStyle = "#4f8d55";
+    drawDiamond(ctx, screen.x + 9 * s, screen.y + 6 * s, 9 * s, 4.5 * s);
+    ctx.fill();
+    drawHouse(ctx, screen.x - 4 * s, screen.y + 1 * s, s, point, 1, 1);
+    return;
   }
 
-  ctx.fillStyle = "rgba(122, 169, 145, 0.42)";
-  ctx.fillRect(screen.x - 14 * viewport.scale, screen.y - firstHeight + 6 * viewport.scale, 4 * viewport.scale, 10 * viewport.scale);
+  if (tier === 2) {
+    // A pair of terraced houses, back one first.
+    drawHouse(ctx, screen.x - 9 * s, screen.y - 3 * s, s, point, 1, 0.9);
+    drawHouse(ctx, screen.x + 8 * s, screen.y + 4 * s, s, point, 5, 0.95);
+    return;
+  }
+
+  // Tier 3: a flat block with balconies, windows and a rooftop plant room.
+  const walls = HOUSE_WALLS[Math.floor(lotHash(point, 3) * HOUSE_WALLS.length)];
+  const hw = 18 * s;
+  const hh = 9.5 * s;
+  const floors = 3 + Math.floor(lotHash(point, 4) * 3);
+  const h = (8 + floors * 8) * s;
+  drawExtrudedDiamond(ctx, screen.x, screen.y + 2 * s, hw, hh, h, walls.top, walls.left, walls.right);
+  drawWallWindows(ctx, screen.x, screen.y + 2 * s, hw, hh, h, floors, 3, point, "rgba(40, 66, 88, 0.88)", "#ffe0a0", 0.3);
+  // Parapet and plant room.
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.35)";
+  ctx.lineWidth = 1;
+  drawDiamond(ctx, screen.x, screen.y + 2 * s - h, hw * 0.92, hh * 0.92);
+  ctx.stroke();
+  drawExtrudedDiamond(ctx, screen.x - 5 * s, screen.y + 2 * s - h, 5 * s, 3 * s, 4 * s, "#cfd6dc", "#8d99a3", "#aab5be");
 }
+
+const GLASS_TONES: Array<Tones & { glass: string; lit: string }> = [
+  { top: "#c5efff", left: "#5f97b3", right: "#86bfdc", glass: "rgba(22, 52, 74, 0.72)", lit: "#d9f6ff" },
+  { top: "#cfe0ff", left: "#6680b8", right: "#8aa3d8", glass: "rgba(26, 36, 78, 0.7)", lit: "#e3ecff" },
+  { top: "#c9f2e6", left: "#5a9f8c", right: "#7fc4b1", glass: "rgba(18, 60, 52, 0.72)", lit: "#e0fff6" },
+  { top: "#efe4d2", left: "#a68f6e", right: "#c8b08c", glass: "rgba(52, 44, 34, 0.7)", lit: "#ffe7b8" },
+];
+const AWNINGS = ["#ff9f80", "#8fd5bf", "#ffcb7c", "#8fe0ff"];
 
 function drawCommercial(
   ctx: CanvasRenderingContext2D,
-  tile: ReturnType<typeof getTile>,
+  tile: TileData,
+  point: GridPoint,
   screen: ScreenPoint,
   viewport: Viewport,
 ): void {
-  const tier = tile.development < 18 ? 0 : tile.development < 44 ? 1 : tile.development < 74 ? 2 : 3;
+  const tier = developmentTier(tile);
   if (tier === 0) {
     return;
   }
 
-  const width = 16 * viewport.scale;
-  const depth = 9 * viewport.scale;
-  const height = (18 + tier * 12) * viewport.scale;
+  const s = viewport.scale;
+  const tones = GLASS_TONES[Math.floor(lotHash(point, 7) * GLASS_TONES.length)];
+  const baseY = screen.y + 1 * s;
 
-  drawExtrudedDiamond(
-    ctx,
-    screen.x,
-    screen.y + 1 * viewport.scale,
-    width,
-    depth,
-    height,
-    "#c5efff",
-    "#6ea5bf",
-    "#8bc6e3",
-  );
-
-  ctx.strokeStyle = "rgba(255, 255, 255, 0.25)";
-  ctx.lineWidth = 1;
-  for (let i = 0; i < tier + 1; i += 1) {
-    const y = screen.y - height + 7 * viewport.scale + i * 7 * viewport.scale;
+  if (tier === 1) {
+    // Corner shop: low unit, shopfront glazing and a striped awning on the street side.
+    const hw = 16 * s;
+    const hh = 8.5 * s;
+    const h = 13 * s;
+    drawExtrudedDiamond(ctx, screen.x, baseY, hw, hh, h, "#e9edf0", "#a7b2bb", "#c7d0d7");
+    drawWallWindows(ctx, screen.x, baseY, hw, hh, h, 1, 3, point, tones.glass, tones.lit, 0.5);
+    const awning = AWNINGS[Math.floor(lotHash(point, 8) * AWNINGS.length)];
+    ctx.fillStyle = awning;
     ctx.beginPath();
-    ctx.moveTo(screen.x - 11 * viewport.scale, y);
-    ctx.lineTo(screen.x + 11 * viewport.scale, y);
+    ctx.moveTo(screen.x, baseY + hh - h * 0.62);
+    ctx.lineTo(screen.x + hw, baseY - h * 0.62);
+    ctx.lineTo(screen.x + hw + 2.5 * s, baseY - h * 0.62 + 3 * s);
+    ctx.lineTo(screen.x + 2.5 * s, baseY + hh - h * 0.62 + 3 * s);
+    ctx.closePath();
+    ctx.fill();
+    return;
+  }
+
+  // Offices (tier 2) and towers with a set-back crown (tier 3).
+  const hw = 16 * s;
+  const hh = 9 * s;
+  const floors = tier === 2 ? 4 : 6 + Math.floor(lotHash(point, 9) * 3);
+  const h = (6 + floors * 7) * s;
+  drawExtrudedDiamond(ctx, screen.x, baseY, hw, hh, h, tones.top, tones.left, tones.right);
+  drawWallWindows(ctx, screen.x, baseY, hw, hh, h, floors, 3, point, tones.glass, tones.lit, 0.28);
+
+  if (tier === 3) {
+    const crownH = 9 * s;
+    drawExtrudedDiamond(ctx, screen.x, baseY - h, hw * 0.62, hh * 0.62, crownH, tones.top, tones.left, tones.right);
+    drawWallWindows(ctx, screen.x, baseY - h, hw * 0.62, hh * 0.62, crownH, 1, 2, point, tones.glass, tones.lit, 0.5);
+    ctx.strokeStyle = "rgba(230, 244, 255, 0.8)";
+    ctx.lineWidth = Math.max(1, s);
+    ctx.beginPath();
+    ctx.moveTo(screen.x, baseY - h - crownH);
+    ctx.lineTo(screen.x, baseY - h - crownH - 12 * s);
     ctx.stroke();
+  } else {
+    drawExtrudedDiamond(ctx, screen.x + 5 * s, baseY - h, 4 * s, 2.5 * s, 3 * s, "#d7dee4", "#8c98a2", "#adb8c1");
   }
 }
 
+const FACTORY_TONES: Tones[] = [
+  { top: "#d4b38d", left: "#8d6b48", right: "#b0885d" },
+  { top: "#c9ccd0", left: "#7f868d", right: "#a2a9b0" },
+  { top: "#d8a48c", left: "#8e5845", right: "#b87460" },
+];
+
 function drawIndustrial(
   ctx: CanvasRenderingContext2D,
-  tile: ReturnType<typeof getTile>,
+  tile: TileData,
+  point: GridPoint,
   screen: ScreenPoint,
   viewport: Viewport,
   timeMs: number,
   reducedMotion: boolean,
 ): void {
-  const tier = tile.development < 18 ? 0 : tile.development < 44 ? 1 : tile.development < 74 ? 2 : 3;
+  const tier = developmentTier(tile);
   if (tier === 0) {
     return;
   }
 
-  drawExtrudedDiamond(
-    ctx,
-    screen.x - 6 * viewport.scale,
-    screen.y + 3 * viewport.scale,
-    16 * viewport.scale,
-    10 * viewport.scale,
-    (12 + tier * 5) * viewport.scale,
-    "#d4b38d",
-    "#8d6b48",
-    "#b0885d",
-  );
-  drawExtrudedDiamond(
-    ctx,
-    screen.x + 11 * viewport.scale,
-    screen.y + 3 * viewport.scale,
-    8 * viewport.scale,
-    5 * viewport.scale,
-    (18 + tier * 6) * viewport.scale,
-    "#ffb17f",
-    "#c16d47",
-    "#da7f57",
-  );
+  const s = viewport.scale;
+  const tones = FACTORY_TONES[Math.floor(lotHash(point, 13) * FACTORY_TONES.length)];
+  const hallX = screen.x - 5 * s;
+  const hallY = screen.y + 3 * s;
+  const hw = 17 * s;
+  const hh = 9.5 * s;
+  const h = (10 + tier * 4) * s;
+
+  // Chimney sits behind the hall, so it is drawn first.
+  const chimneyX = screen.x + 10 * s;
+  const chimneyY = screen.y - 4 * s;
+  const chimneyH = (24 + tier * 7) * s;
+  drawExtrudedDiamond(ctx, chimneyX, chimneyY, 3.6 * s, 2 * s, chimneyH, "#e7e2dc", "#9b8f84", "#c2b7ac");
+  ctx.fillStyle = "#c8553d";
+  ctx.fillRect(chimneyX - 3.6 * s, chimneyY - chimneyH + 3 * s, 7.2 * s, 3 * s);
+
+  drawExtrudedDiamond(ctx, hallX, hallY, hw, hh, h, tones.top, tones.left, tones.right);
+  drawWallWindows(ctx, hallX, hallY, hw, hh, h, 1, 4, point, "rgba(40, 52, 60, 0.75)", "#ffd38a", 0.25);
+
+  // Sawtooth roof: a row of small gables along the hall.
+  const teeth = 3;
+  for (let i = 0; i < teeth; i += 1) {
+    const t = (i + 0.5) / teeth - 0.5;
+    drawGableRoof(
+      ctx,
+      hallX + t * hw * 1.1,
+      hallY - h - t * hh * 1.1 * -1,
+      hw / teeth,
+      hh * 0.9,
+      4 * s,
+      "#e9eef2",
+      "#7d8a96",
+      tones.right,
+    );
+  }
 
   const smokeOffset = reducedMotion ? 0 : Math.sin(timeMs * 0.002 + tile.variant) * 3;
-  ctx.fillStyle = "rgba(217, 227, 233, 0.18)";
+  ctx.fillStyle = "rgba(217, 227, 233, 0.2)";
   ctx.beginPath();
-  ctx.arc(
-    screen.x + 11 * viewport.scale,
-    screen.y - (22 + tier * 6) * viewport.scale + smokeOffset,
-    8 * viewport.scale,
-    0,
-    Math.PI * 2,
-  );
+  ctx.arc(chimneyX + 2 * s, chimneyY - chimneyH - 7 * s + smokeOffset, 6 * s, 0, Math.PI * 2);
+  ctx.arc(chimneyX + 8 * s, chimneyY - chimneyH - 13 * s + smokeOffset * 1.4, 4.5 * s, 0, Math.PI * 2);
   ctx.fill();
 }
 
-function drawPark(ctx: CanvasRenderingContext2D, screen: ScreenPoint, viewport: Viewport): void {
-  drawDiamond(ctx, screen.x, screen.y, 18 * viewport.scale, 9 * viewport.scale);
+function drawPark(ctx: CanvasRenderingContext2D, point: GridPoint, screen: ScreenPoint, viewport: Viewport): void {
+  const s = viewport.scale;
+  drawDiamond(ctx, screen.x, screen.y, 30 * s, 15.5 * s);
   ctx.fillStyle = "#5aa868";
   ctx.fill();
 
-  ctx.fillStyle = "#376f44";
+  // Footpath across the lawn.
+  ctx.strokeStyle = "rgba(249, 233, 197, 0.7)";
+  ctx.lineWidth = Math.max(1, 1.6 * s);
   ctx.beginPath();
-  ctx.arc(screen.x - 10 * viewport.scale, screen.y - 6 * viewport.scale, 6 * viewport.scale, 0, Math.PI * 2);
-  ctx.arc(screen.x + 10 * viewport.scale, screen.y - 2 * viewport.scale, 5.5 * viewport.scale, 0, Math.PI * 2);
-  ctx.arc(screen.x, screen.y + 3 * viewport.scale, 5 * viewport.scale, 0, Math.PI * 2);
-  ctx.fill();
-
-  ctx.strokeStyle = "rgba(249, 233, 197, 0.58)";
-  ctx.lineWidth = 1.2;
-  ctx.beginPath();
-  ctx.moveTo(screen.x - 10 * viewport.scale, screen.y);
-  ctx.lineTo(screen.x + 10 * viewport.scale, screen.y);
+  ctx.moveTo(screen.x - 15 * s, screen.y - 7.5 * s);
+  ctx.lineTo(screen.x + 15 * s, screen.y + 7.5 * s);
   ctx.stroke();
+
+  // Trees from the in-repo Kenney sprites when loaded; simple canopies otherwise.
+  const tall = getTilesetTile("treeTall");
+  const short = getTilesetTile("treeShort");
+  const spots = [
+    { x: -14, y: 1, big: true },
+    { x: 4, y: -9, big: lotHash(point, 21) > 0.5 },
+    { x: 13, y: 0, big: false },
+    { x: -2, y: 8, big: lotHash(point, 22) > 0.4 },
+  ];
+  spots.forEach((spot) => {
+    const image = spot.big ? tall : short;
+    const x = screen.x + spot.x * s;
+    const y = screen.y + spot.y * s;
+    if (image) {
+      const w = image.width * 0.95 * s;
+      const h = image.height * 0.95 * s;
+      ctx.drawImage(image, x - w / 2, y - h + 2 * s, w, h);
+      return;
+    }
+    ctx.fillStyle = "#376f44";
+    ctx.beginPath();
+    ctx.arc(x, y - 5 * s, (spot.big ? 6 : 4.5) * s, 0, Math.PI * 2);
+    ctx.fill();
+  });
 }
 
 function drawUtility(ctx: CanvasRenderingContext2D, screen: ScreenPoint, viewport: Viewport): void {
@@ -706,7 +963,7 @@ function drawStructures(
   const tile = getTile(state, point.x, point.y);
 
   if (tile.structure === "park") {
-    drawPark(ctx, screen, viewport);
+    drawPark(ctx, point, screen, viewport);
     return;
   }
 
@@ -721,11 +978,11 @@ function drawStructures(
   }
 
   if (tile.zone === "residential") {
-    drawResidential(ctx, tile, screen, viewport);
+    drawResidential(ctx, tile, point, screen, viewport);
   } else if (tile.zone === "commercial") {
-    drawCommercial(ctx, tile, screen, viewport);
+    drawCommercial(ctx, tile, point, screen, viewport);
   } else if (tile.zone === "industrial") {
-    drawIndustrial(ctx, tile, screen, viewport, timeMs, reducedMotion);
+    drawIndustrial(ctx, tile, point, screen, viewport, timeMs, reducedMotion);
   }
 }
 
