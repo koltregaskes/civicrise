@@ -72,11 +72,21 @@ export function loadTileset(): void {
 }
 
 /**
- * Chooses the road piece that matches which neighbours are also roads.
- * Directions are the board's four grid neighbours, which project to the
- * diamond's up / right / down / left corners on screen.
+ * Chooses the road piece that matches which grid neighbours are also roads.
+ *
+ * Kenney names its pieces by screen edge, with north as the up-left edge of the diamond:
+ * N = up-left, E = up-right, S = down-right, W = down-left (checked against the pixels of
+ * every piece). The board's grid is turned a quarter from that: grid north (y - 1) sits up-right
+ * on screen, grid east (x + 1) down-right, grid south (y + 1) down-left and grid west (x - 1)
+ * up-left. Feeding grid directions straight in drew every road across its own line, which is
+ * what made straight roads read as rows of separate slats.
  */
 export function pickRoadTile(north: boolean, east: boolean, south: boolean, west: boolean): TileName {
+  return pickKenneyRoad(west, north, east, south);
+}
+
+/** Picks a piece from Kenney screen edges (N up-left, E up-right, S down-right, W down-left). */
+function pickKenneyRoad(north: boolean, east: boolean, south: boolean, west: boolean): TileName {
   const count = Number(north) + Number(east) + Number(south) + Number(west);
 
   if (count === 4) return "crossroad";
@@ -108,20 +118,30 @@ export function pickRoadTile(north: boolean, east: boolean, south: boolean, west
 }
 
 /**
- * Draws an isometric tile so its diamond top face is centred on (screenX, screenY),
- * matching where the vector renderer places its diamonds.
+ * Overlap, in screen pixels, added round each tile so smoothed edges of neighbouring tiles cover
+ * each other instead of letting the dark backdrop show through as hairline seams.
+ */
+const TILE_BLEED = 0.75;
+
+/**
+ * Draws an isometric tile so its diamond top face exactly covers the board diamond centred on
+ * (screenX, screenY) that is diamondWidth wide and diamondHeight tall. Width and height are
+ * scaled separately: the board diamond is 78 x 40, which is not quite the 2:1 of the art
+ * (100 x 50), so a single scale left a 1 px step on every row.
  */
 export function drawTile(
   ctx: CanvasRenderingContext2D,
   image: HTMLImageElement,
   screenX: number,
   screenY: number,
-  tileWidth: number,
+  diamondWidth: number,
+  diamondHeight: number,
 ): void {
-  const scale = tileWidth / TILE_SOURCE_WIDTH;
-  const drawWidth = image.width * scale;
-  const drawHeight = image.height * scale;
+  const scaleX = (diamondWidth + TILE_BLEED * 2) / TILE_SOURCE_WIDTH;
+  const scaleY = (diamondHeight + TILE_BLEED) / TILE_SOURCE_DIAMOND_HEIGHT;
+  const drawWidth = image.width * scaleX;
+  const drawHeight = image.height * scaleY;
   const originX = screenX - drawWidth / 2;
-  const originY = screenY - (TILE_SOURCE_DIAMOND_HEIGHT / 2) * scale;
+  const originY = screenY - (TILE_SOURCE_DIAMOND_HEIGHT / 2) * scaleY;
   ctx.drawImage(image, originX, originY, drawWidth, drawHeight);
 }

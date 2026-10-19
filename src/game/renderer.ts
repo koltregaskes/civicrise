@@ -279,6 +279,20 @@ function drawIncidentAtmosphere(
   }
 }
 
+/** The road piece that matches this tile's connected neighbours, or null before the art loads. */
+function getRoadArt(state: GameState, point: GridPoint): HTMLImageElement | null {
+  const isRoad = (x: number, y: number) =>
+    x >= 0 && y >= 0 && x < state.width && y < state.height && getTile(state, x, y).road;
+  return getTilesetTile(
+    pickRoadTile(
+      isRoad(point.x, point.y - 1),
+      isRoad(point.x + 1, point.y),
+      isRoad(point.x, point.y + 1),
+      isRoad(point.x - 1, point.y),
+    ),
+  );
+}
+
 function drawTerrain(
   ctx: CanvasRenderingContext2D,
   state: GameState,
@@ -292,11 +306,15 @@ function drawTerrain(
   const halfWidth = (TILE_WIDTH / 2) * viewport.scale;
   const halfHeight = (TILE_HEIGHT / 2) * viewport.scale;
 
-  // Real isometric tile art when the tileset has loaded; vector drawing otherwise.
-  const artName = tile.terrain === "water" ? "water" : tile.terrain === "quay" ? "dirt" : "grass";
-  const art = getTilesetTile(artName);
+  // Real isometric tile art when the tileset has loaded; vector drawing otherwise. Road pieces are
+  // drawn here, in the same back-to-front pass as the ground, so each tile's slab edge is covered by
+  // the tiles in front of it. Drawing them in a later pass laid their brown slab edges over the
+  // ground in front, which boxed every road tile in on its own.
+  const art = tile.road ? getRoadArt(state, point) : getTilesetTile(
+    tile.terrain === "water" ? "water" : tile.terrain === "quay" ? "dirt" : "grass",
+  );
   if (art) {
-    drawTilesetTile(ctx, art, screen.x, screen.y, TILE_WIDTH * viewport.scale);
+    drawTilesetTile(ctx, art, screen.x, screen.y, halfWidth * 2, halfHeight * 2);
     return;
   }
 
@@ -364,19 +382,8 @@ function drawRoad(
     return;
   }
 
-  // Real road art, picking the piece that matches the connected neighbours.
-  const isRoad = (x: number, y: number) =>
-    x >= 0 && y >= 0 && x < state.width && y < state.height && getTile(state, x, y).road;
-  const roadArt = getTilesetTile(
-    pickRoadTile(
-      isRoad(point.x, point.y - 1),
-      isRoad(point.x + 1, point.y),
-      isRoad(point.x, point.y + 1),
-      isRoad(point.x - 1, point.y),
-    ),
-  );
-  if (roadArt) {
-    drawTilesetTile(ctx, roadArt, screen.x, screen.y, TILE_WIDTH * viewport.scale);
+  // With the tileset loaded the road piece was already drawn in the terrain pass.
+  if (getRoadArt(state, point)) {
     return;
   }
 
