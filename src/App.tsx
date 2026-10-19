@@ -286,6 +286,26 @@ const INITIAL_VIEW_STATE: GameState | null = BOOT_CONFIG.review
     : INITIAL_SAVE?.state ?? null;
 const INITIAL_SCREEN: "title" | "playing" = BOOT_CONFIG.autostart ? "playing" : "title";
 
+// Per-viewer layout preference (side panels shown or tucked away). Kept apart from the city save,
+// so review mode still persists no progress. Storage can be blocked, so every access is guarded.
+const LAYOUT_PREFS_KEY = "civicrise.layout.v1";
+
+function loadPanelsHidden(): boolean {
+  try {
+    return window.localStorage.getItem(LAYOUT_PREFS_KEY) === "panels-hidden";
+  } catch {
+    return false;
+  }
+}
+
+function savePanelsHidden(hidden: boolean): void {
+  try {
+    window.localStorage.setItem(LAYOUT_PREFS_KEY, hidden ? "panels-hidden" : "panels-shown");
+  } catch {
+    // Storage unavailable: the choice simply lasts for this page view.
+  }
+}
+
 function App() {
   const [screen, setScreen] = useState<"title" | "playing">(INITIAL_SCREEN);
   const [selectedTool, setSelectedTool] = useState<ToolId>("road");
@@ -296,6 +316,7 @@ function App() {
   const [savePayload, setSavePayload] = useState<SavePayload | null>(INITIAL_SAVE);
   const [options, setOptions] = useState<UserOptions>(() => loadOptions());
   const [viewState, setViewState] = useState<GameState | null>(INITIAL_VIEW_STATE);
+  const [panelsHidden, setPanelsHidden] = useState<boolean>(() => loadPanelsHidden());
   const deferredState = useDeferredValue(viewState);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -719,7 +740,7 @@ function App() {
       )}
 
       {screen === "playing" && activeState && (
-        <section className="game-screen">
+        <section className={`game-screen${panelsHidden ? " panels-hidden" : ""}`}>
           <header className="top-hud panel">
               <div className="hud-cluster">
                 <span className="district-chip">{activeScenario.districtName}</span>
@@ -793,6 +814,18 @@ function App() {
                   </button>
                 ))}
               </div>
+              <button
+                className={`small-button panels-toggle${panelsHidden ? " active" : ""}`}
+                aria-pressed={panelsHidden}
+                title={panelsHidden ? "Show the planning panels beside the map" : "Hide the side panels to widen the map"}
+                onClick={() => {
+                  const next = !panelsHidden;
+                  setPanelsHidden(next);
+                  savePanelsHidden(next);
+                }}
+              >
+                {panelsHidden ? "Show panels" : "Hide panels"}
+              </button>
               <button className="small-button" onClick={() => setShowHelp(true)}>
                 Help
               </button>

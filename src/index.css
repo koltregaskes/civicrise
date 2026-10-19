@@ -810,3 +810,118 @@ button {
     font-size: 3.5rem;
   }
 }
+
+/* Desktop play layout: the whole game fits the window, so the map and the build tools are always
+   on screen. Side rails scroll on their own, and "Hide panels" gives the map the full width. */
+@media (min-width: 1201px) {
+  .app-root {
+    height: 100vh;
+    min-height: 0;
+    padding: 14px 16px;
+  }
+
+  .game-screen {
+    height: calc(100vh - 28px);
+    min-height: 0;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    gap: 12px;
+  }
+
+  .game-screen .top-hud {
+    padding: 10px 16px;
+    gap: 12px;
+  }
+
+  .game-screen .hud-cluster,
+  .game-screen .hud-controls {
+    gap: 12px 14px;
+  }
+
+  .game-screen .hud-cluster strong {
+    font-size: 1.08rem;
+  }
+
+  .game-screen .hud-cluster span {
+    font-size: 0.8rem;
+  }
+
+  .game-screen .micro-label {
+    font-size: 0.68rem;
+    letter-spacing: 0.14em;
+  }
+
+  .game-screen .small-button,
+  .game-screen .speed-button {
+    padding: 8px 11px;
+  }
+
+  .game-layout {
+    grid-template-columns: minmax(210px, 248px) minmax(0, 1fr) minmax(240px, 288px);
+    gap: 12px;
+  }
+
+  .left-rail,
+  .right-rail {
+    align-content: start;
+    gap: 12px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(169, 210, 232, 0.28) transparent;
+    border-radius: 24px;
+  }
+
+  .left-rail .panel,
+  .right-rail .panel {
+    padding: 14px 14px 16px;
+    border-radius: 20px;
+    box-shadow: none;
+    font-size: 0.9rem;
+  }
+
+  .stage-panel h2,
+  .objective-panel h2 {
+    font-size: 1.45rem;
+  }
+
+  .viewport-card {
+    min-height: 0;
+  }
+
+  /* The canvas is taken out of flow so its pixel size can never feed back into the grid row. */
+  .district-canvas {
+    position: absolute;
+    inset: 0;
+    min-height: 0;
+  }
+
+  .game-screen .tool-rail {
+    padding: 8px 10px;
+    gap: 8px;
+  }
+
+  .game-screen .tool-button {
+    gap: 1px;
+    padding: 7px 10px 8px;
+    border-radius: 14px;
+    font-size: 0.86rem;
+    line-height: 1.25;
+  }
+
+  .game-screen .tool-key {
+    font-size: 0.68rem;
+  }
+
+  .game-screen.panels-hidden .game-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .game-screen.panels-hidden .left-rail,
+  .game-screen.panels-hidden .right-rail {
+    display: none;
+  }
+}
+
+.panels-toggle.active {
+  border-color: rgba(143, 224, 255, 0.4);
+}
