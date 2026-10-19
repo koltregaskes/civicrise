@@ -31,15 +31,35 @@ interface ScreenPoint {
 
 const TILE_ORDER_CACHE = new Map<string, GridPoint[]>();
 
+/** World-space room kept above the back corner of the map for the tallest buildings and smoke. */
+const MAP_HEADROOM = 48;
+/** Thickness of the tile slab under the front corner of the map (15 source px of a Kenney tile). */
+const MAP_SLAB_DEPTH = 12;
+/** Share of the canvas the map may fill along its tighter axis. */
+const MAP_FIT = 0.94;
+const MAX_SCALE = 1.6;
+
+/**
+ * Fits the whole isometric board to the canvas and centres it. The board's screen bounds are
+ * worked out from the grid size: left and right corners come from the two grid edges, the top
+ * from the back corner plus building headroom, and the bottom from the front corner plus the slab.
+ */
 function getViewport(state: GameState, width: number, height: number): Viewport {
-  const worldWidth = (state.width + state.height) * (TILE_WIDTH / 2);
-  const worldHeight = (state.width + state.height) * (TILE_HEIGHT / 2);
-  const scale = Math.min(width / (worldWidth * 1.08), height / (worldHeight * 1.1), 1.28);
+  const span = state.width + state.height;
+  const worldWidth = span * (TILE_WIDTH / 2);
+  const top = -TILE_HEIGHT / 2 - MAP_HEADROOM;
+  const bottom = (span - 1) * (TILE_HEIGHT / 2) + MAP_SLAB_DEPTH;
+  const scale = Math.max(
+    0.05,
+    Math.min((width * MAP_FIT) / worldWidth, (height * MAP_FIT) / (bottom - top), MAX_SCALE),
+  );
+  const centreX = (state.width - state.height) * (TILE_WIDTH / 4);
+  const centreY = (top + bottom) / 2;
 
   return {
     scale,
-    originX: width * 0.52,
-    originY: Math.max(84, height * 0.16),
+    originX: width / 2 - centreX * scale,
+    originY: height / 2 - centreY * scale,
   };
 }
 
@@ -166,6 +186,36 @@ function drawBackground(
     ctx.lineTo(width, row);
     ctx.stroke();
   }
+}
+
+/**
+ * Soft drop shadow under the board itself. It replaces the old fixed ellipse, which sat at a set
+ * share of the canvas and showed up as a stray dark disc whenever the board was elsewhere.
+ */
+function drawBoardShadow(ctx: CanvasRenderingContext2D, state: GameState, viewport: Viewport): void {
+  const back = tileToScreen({ x: 0, y: 0 }, viewport);
+  const right = tileToScreen({ x: state.width - 1, y: 0 }, viewport);
+  const front = tileToScreen({ x: state.width - 1, y: state.height - 1 }, viewport);
+  const left = tileToScreen({ x: 0, y: state.height - 1 }, viewport);
+  const halfWidth = (TILE_WIDTH / 2) * viewport.scale;
+  const halfHeight = (TILE_HEIGHT / 2) * viewport.scale;
+  const drop = MAP_SLAB_DEPTH * viewport.scale;
+
+  ctx.save();
+  ctx.shadowColor = "rgba(0, 0, 0, 0.5)";
+  ctx.shadowBlur = 36 * viewport.scale;
+  ctx.shadowOffsetY = 14 * viewport.scale;
+  ctx.fillStyle = "#08131d";
+  ctx.beginPath();
+  ctx.moveTo(back.x, back.y - halfHeight);
+  ctx.lineTo(right.x + halfWidth, right.y);
+  ctx.lineTo(right.x + halfWidth, right.y + drop);
+  ctx.lineTo(front.x, front.y + halfHeight + drop);
+  ctx.lineTo(left.x - halfWidth, left.y + drop);
+  ctx.lineTo(left.x - halfWidth, left.y);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
 }
 
 function drawIncidentAtmosphere(
@@ -760,10 +810,7 @@ export function renderDistrict(
   const viewport = getViewport(state, width, height);
   const tiles = getSortedTiles(state);
 
-  context.fillStyle = "rgba(0, 0, 0, 0.16)";
-  context.beginPath();
-  context.ellipse(width * 0.52, height * 0.67, width * 0.28, height * 0.11, 0, 0, Math.PI * 2);
-  context.fill();
+  drawBoardShadow(context, state, viewport);
 
   tiles.forEach((point) => {
     const screen = tileToScreen(point, viewport);
