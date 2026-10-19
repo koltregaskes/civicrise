@@ -849,11 +849,14 @@ export function pickTileFromCanvas(
   const localY = clientY - rect.top;
   const viewport = getViewport(state, rect.width, rect.height);
 
-  const gridX = Math.floor(
+  // Inverse of tileToScreen. Tile centres sit on whole grid numbers, so the nearest tile is found by
+  // rounding. (Flooring here offset every hit area by half a tile: the top half of each diamond
+  // missed or picked a neighbour.)
+  const gridX = Math.round(
     (localY - viewport.originY) / (TILE_HEIGHT * viewport.scale) +
       (localX - viewport.originX) / (TILE_WIDTH * viewport.scale),
   );
-  const gridY = Math.floor(
+  const gridY = Math.round(
     (localY - viewport.originY) / (TILE_HEIGHT * viewport.scale) -
       (localX - viewport.originX) / (TILE_WIDTH * viewport.scale),
   );
