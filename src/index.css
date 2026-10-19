@@ -925,3 +925,43 @@ button {
 .panels-toggle.active {
   border-color: rgba(143, 224, 255, 0.4);
 }
+
+/* Mid-width desktops (1280 to 1480 px): keep the HUD to one row so the map keeps its height.
+   The district name also appears on the map caption, so the chip can go. */
+@media (min-width: 1201px) and (max-width: 1480px) {
+  .game-screen .district-chip {
+    display: none;
+  }
+
+  .game-screen .hud-cluster {
+    flex-wrap: nowrap;
+    gap: 8px 12px;
+    min-width: 0;
+  }
+
+  .game-screen .hud-cluster strong {
+    font-size: 0.95rem;
+    white-space: nowrap;
+  }
+
+  .game-screen .hud-cluster span {
+    font-size: 0.74rem;
+    white-space: nowrap;
+  }
+
+  .game-screen .hud-controls {
+    flex-wrap: nowrap;
+    gap: 6px;
+  }
+
+  .game-screen .speed-group {
+    gap: 4px;
+  }
+
+  .game-screen .small-button,
+  .game-screen .speed-button {
+    padding: 6px 8px;
+    font-size: 0.84rem;
+    white-space: nowrap;
+  }
+}
