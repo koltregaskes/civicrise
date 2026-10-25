@@ -15,6 +15,7 @@ This repo now contains the browser-first Civicrise prototype with the completed 
 
 The current playable build includes:
 
+- a Charter Review campaign: pass North Quay, then Rivergate, or lose the charter if either review fails
 - two handcrafted isometric district scenarios
 - roads, residential, commercial, industrial, park, utility, and bulldoze tools
 - milestone-unlocked transit stops
@@ -58,3 +59,9 @@ To refresh the shared evidence pack and contract files in `W:\Repos\_My Games\LO
 
 - `North Quay Pilot District`: compact first-review slice that proves the core city-builder loop
 - `Rivergate Expansion`: larger Phase 2 map with longer progression, transit, and policy management
+
+## How to finish
+
+From the title screen, choose **Charter Review**. The goal is stated there and again in the opening banner: pass North Quay, then Rivergate. A district is won by reaching its final review milestone, and lost if the treasury stays negative or happiness collapses. After North Quay passes, choose **Next district**. Winning Rivergate wins the charter. Losing either chapter fails the charter. **Retry chapter** restarts the current district. **New charter** starts the campaign again. **Back to title** leaves the run.
+
+Single districts are still available from **New City** or **Scenarios**. Those end on that district alone.

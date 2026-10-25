@@ -1,4 +1,4 @@
-import { DEFAULT_SCENARIO_ID, POLICY_DEFINITIONS, TOOL_DEFINITIONS, getScenario } from "./scenario";
+import { CHARTER_CAMPAIGN, DEFAULT_SCENARIO_ID, POLICY_DEFINITIONS, TOOL_DEFINITIONS, getScenario } from "./scenario";
 import {
   ActionCounters,
   BannerMessage,
@@ -1344,10 +1344,19 @@ function maybeAdvanceMilestones(state: GameState): void {
   if (state.stageIndex >= scenario.milestones.length) {
     state.phase = "won";
     state.paused = true;
+    const campaign = state.campaign;
+    const lastChapter = !!campaign && campaign.chapterIndex >= campaign.chapterCount - 1;
+    if (campaign) {
+      state.campaign = { ...campaign, status: lastChapter ? "won" : "active" };
+    }
     pushLog(
       state,
-      "Review passed",
-      `${scenario.districtName} has crossed the final review threshold and is ready for presentation.`,
+      lastChapter ? "Charter secured" : "Review passed",
+      lastChapter
+        ? `${scenario.districtName} closed the charter review. The campaign is won.`
+        : campaign
+          ? `${scenario.districtName} has crossed the final review threshold. The next district is waiting.`
+          : `${scenario.districtName} has crossed the final review threshold and is ready for presentation.`,
       "success",
     );
   }
@@ -1453,6 +1462,9 @@ function maybeLose(state: GameState, deltaDays: number): void {
   if (state.stressTimer >= 2.6) {
     state.phase = "lost";
     state.paused = true;
+    if (state.campaign) {
+      state.campaign = { ...state.campaign, status: "lost" };
+    }
     pushLog(
       state,
       "District review failed",
@@ -1528,6 +1540,63 @@ export function createGameState(scenarioId = DEFAULT_SCENARIO_ID): GameState {
     true,
   );
 
+  return state;
+}
+
+export function createCampaignState(): GameState {
+  const state = createGameState(CHARTER_CAMPAIGN.chapters[0]);
+  state.campaign = {
+    id: CHARTER_CAMPAIGN.id,
+    name: CHARTER_CAMPAIGN.name,
+    chapterIndex: 0,
+    chapterCount: CHARTER_CAMPAIGN.chapters.length,
+    status: "active",
+  };
+  const scenario = getScenario(state.scenarioId);
+  setBanner(
+    state,
+    `${CHARTER_CAMPAIGN.name}: chapter 1 of ${CHARTER_CAMPAIGN.chapters.length}`,
+    `${CHARTER_CAMPAIGN.goal} This chapter is ${scenario.districtName}.`,
+    "info",
+    true,
+  );
+  pushLog(state, CHARTER_CAMPAIGN.name, CHARTER_CAMPAIGN.goal, "info");
+  return state;
+}
+
+export function continueCampaign(previous: GameState): GameState | null {
+  const campaign = previous.campaign;
+  if (!campaign || previous.phase !== "won" || campaign.status === "won") {
+    return null;
+  }
+
+  const nextIndex = campaign.chapterIndex + 1;
+  if (nextIndex >= campaign.chapterCount) {
+    return null;
+  }
+
+  const state = createGameState(CHARTER_CAMPAIGN.chapters[nextIndex]);
+  const carry = Math.max(0, Math.round(previous.treasury * 0.2));
+  state.treasury += carry;
+  state.campaign = {
+    ...campaign,
+    chapterIndex: nextIndex,
+    status: "active",
+  };
+  const scenario = getScenario(state.scenarioId);
+  pushLog(
+    state,
+    "Next district",
+    `${scenario.districtName} opens as chapter ${nextIndex + 1}. Carried grant: ${formatMoney(carry)}.`,
+    "success",
+  );
+  setBanner(
+    state,
+    `${campaign.name}: chapter ${nextIndex + 1} of ${campaign.chapterCount}`,
+    `${CHARTER_CAMPAIGN.goal} This chapter is ${scenario.districtName}. Carried grant: ${formatMoney(carry)}.`,
+    "info",
+    true,
+  );
   return state;
 }
 
