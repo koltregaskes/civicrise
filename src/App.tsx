@@ -25,6 +25,7 @@ import {
   togglePolicy,
   continueCampaign,
   createCampaignState,
+  retryCampaignChapter,
   createGameState,
 } from "./game/simulation";
 import { pickTileFromCanvas, renderDistrict } from "./game/renderer";
@@ -620,11 +621,9 @@ function App() {
       clearSavedGame();
       setSavePayload(null);
     }
-    const campaign = gameRef.current?.campaign;
-    if (campaign && campaign.status !== "won") {
-      const fresh = createGameState(activeScenario.id);
-      fresh.campaign = { ...campaign, status: "active" };
-      await adoptState(fresh);
+    const retried = gameRef.current ? retryCampaignChapter(gameRef.current) : null;
+    if (retried) {
+      await adoptState(retried);
       return;
     }
     await launchScenario(activeScenario.id);

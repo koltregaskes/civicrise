@@ -1551,6 +1551,7 @@ export function createCampaignState(): GameState {
     chapterIndex: 0,
     chapterCount: CHARTER_CAMPAIGN.chapters.length,
     status: "active",
+    carriedGrant: 0,
   };
   const scenario = getScenario(state.scenarioId);
   setBanner(
@@ -1582,6 +1583,7 @@ export function continueCampaign(previous: GameState): GameState | null {
     ...campaign,
     chapterIndex: nextIndex,
     status: "active",
+    carriedGrant: carry,
   };
   const scenario = getScenario(state.scenarioId);
   pushLog(
@@ -1597,6 +1599,39 @@ export function continueCampaign(previous: GameState): GameState | null {
     "info",
     true,
   );
+  return state;
+}
+
+export function retryCampaignChapter(previous: GameState): GameState | null {
+  const campaign = previous.campaign;
+  if (!campaign || campaign.status === "won") {
+    return null;
+  }
+
+  const state = createGameState(previous.scenarioId);
+  const carriedGrant = Math.max(0, Math.round(campaign.carriedGrant ?? 0));
+  state.treasury += carriedGrant;
+  state.campaign = {
+    ...campaign,
+    status: "active",
+    carriedGrant,
+  };
+  if (carriedGrant > 0) {
+    const scenario = getScenario(state.scenarioId);
+    pushLog(
+      state,
+      "Chapter restarted",
+      `${scenario.districtName} starts again with the carried grant of ${formatMoney(carriedGrant)}.`,
+      "info",
+    );
+    setBanner(
+      state,
+      `${campaign.name}: chapter ${campaign.chapterIndex + 1} of ${campaign.chapterCount}`,
+      `${CHARTER_CAMPAIGN.goal} This chapter is ${scenario.districtName}. Carried grant kept: ${formatMoney(carriedGrant)}.`,
+      "info",
+      true,
+    );
+  }
   return state;
 }
 
@@ -1616,6 +1651,12 @@ export function rehydrateGameState(rawState: GameState): GameState {
       ...createDefaultPolicies(),
       ...rawState.policies,
     },
+    campaign: rawState.campaign
+      ? {
+          ...rawState.campaign,
+          carriedGrant: Math.max(0, rawState.campaign.carriedGrant ?? 0),
+        }
+      : undefined,
     activeIncident: rawState.activeIncident ?? null,
     incidentCooldown: rawState.incidentCooldown ?? 0,
     metrics: createEmptyMetrics(

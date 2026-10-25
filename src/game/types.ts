@@ -140,6 +140,7 @@ export interface CampaignProgress {
   chapterIndex: number;
   chapterCount: number;
   status: CampaignStatus;
+  carriedGrant: number;
 }
 
 export interface GameState {
