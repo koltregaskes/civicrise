@@ -228,6 +228,23 @@ export interface ScenarioDefinition {
   helpSections: HelpSection[];
 }
 
+export interface ScorecardLine {
+  id: string;
+  label: string;
+  detail: string;
+  points: number;
+  maxPoints: number;
+}
+
+export interface ScenarioScorecard {
+  grade: "A" | "B" | "C" | "D" | "F";
+  score: number;
+  maxScore: number;
+  stageName: string;
+  headline: string;
+  lines: ScorecardLine[];
+}
+
 export interface PlacementPreview {
   allowed: boolean;
   reason: string;

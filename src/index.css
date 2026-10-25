@@ -690,6 +690,68 @@ button {
   padding: 24px;
 }
 
+.outcome-panel {
+  max-height: min(860px, calc(100vh - 48px));
+  overflow: auto;
+}
+
+.scorecard {
+  display: grid;
+  gap: 12px;
+  margin: 4px 0 8px;
+  padding: 16px;
+  border-radius: 18px;
+  background: rgba(8, 15, 22, 0.56);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.scorecard-summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: end;
+  gap: 16px;
+}
+
+.scorecard-summary > span {
+  color: var(--text-strong);
+  font-variant-numeric: tabular-nums;
+}
+
+.scorecard-grade {
+  display: block;
+  font-family: "Fraunces", "Georgia", serif;
+  font-size: 2.6rem;
+  line-height: 0.9;
+  color: var(--text-strong);
+}
+
+.scorecard-lines {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.scorecard-line {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px 12px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.scorecard-line em {
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-strong);
+}
+
+.scorecard-line span {
+  grid-column: 1 / -1;
+  color: var(--text-dim);
+}
+
 .modal-header {
   display: flex;
   justify-content: space-between;

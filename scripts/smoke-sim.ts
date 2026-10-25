@@ -1,4 +1,4 @@
-import { createReviewGameState } from "../src/game/simulation";
+import { buildScenarioScorecard, createReviewGameState } from "../src/game/simulation";
 import { getScenario } from "../src/game/scenario";
 
 function getArgValue(flag: string): string | null {
@@ -58,6 +58,18 @@ if (state.treasury <= 0) {
 
 if (!scenario) {
   issues.push("Scenario definition not found.");
+}
+
+const scorecard = buildScenarioScorecard(state);
+const scorecardTotal = scorecard.lines.reduce((total, line) => total + line.points, 0);
+if (scorecard.score !== scorecardTotal || scorecard.score < 0 || scorecard.score > scorecard.maxScore) {
+  issues.push(`Scorecard total is inconsistent (score=${scorecard.score}, lines=${scorecardTotal}, max=${scorecard.maxScore}).`);
+}
+if (scorecard.lines.length !== 5 || !["A", "B", "C", "D", "F"].includes(scorecard.grade)) {
+  issues.push("Scorecard is missing its review lines or grade.");
+}
+if (!scorecard.headline.includes(scenario.districtName) || !scorecard.headline.includes(scorecard.stageName)) {
+  issues.push("Scorecard headline does not name the district and review bar.");
 }
 
 if (issues.length > 0) {

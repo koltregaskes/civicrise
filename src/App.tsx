@@ -10,6 +10,7 @@ import { DEFAULT_SCENARIO_ID, POLICY_DEFINITIONS, SCENARIOS, TOOL_DEFINITIONS, g
 import {
   advanceGameState,
   applyTool,
+  buildScenarioScorecard,
   createReviewGameState,
   getIncidentForecast,
   dismissBanner,
@@ -1060,6 +1061,7 @@ function App() {
                     ? "This run proved the current district can carry zoning, transport, policy, budget pressure, and service pressure all the way through its scenario arc."
                     : "Take another pass with steadier services, cleaner transport, and a healthier treasury before the next review."}
                 </p>
+                <ScenarioScorecardPanel state={activeState} />
                 <div className="overlay-actions">
                   <button className="action-button strong" onClick={() => void restartScenario()}>
                     New run
@@ -1090,9 +1092,12 @@ function App() {
               </button>
             ))}
             <article className="scenario-card locked">
-              <p className="micro-label">Phase 3</p>
+              <p className="micro-label">Later</p>
               <h3>Campaign chapters</h3>
-              <p>Long-form civic narratives, chained district reviews, and scenario scorecards land in the next roadmap tranche.</p>
+              <p>
+                Finished runs now receive a scenario scorecard. Chained district reviews and long-form campaign chapters
+                are still ahead.
+              </p>
               <span>Locked for a later milestone</span>
             </article>
           </div>
@@ -1164,6 +1169,36 @@ function App() {
         </Modal>
       )}
     </div>
+  );
+}
+
+function ScenarioScorecardPanel({ state }: { state: GameState }) {
+  const scorecard = buildScenarioScorecard(state);
+
+  return (
+    <section className="scorecard" aria-label="Scenario scorecard">
+      <div className="scorecard-summary">
+        <div>
+          <p className="micro-label">Scenario scorecard</p>
+          <strong className="scorecard-grade">{scorecard.grade}</strong>
+        </div>
+        <span>
+          {scorecard.score} / {scorecard.maxScore}
+        </span>
+      </div>
+      <p>{scorecard.headline}</p>
+      <ul className="scorecard-lines">
+        {scorecard.lines.map((line) => (
+          <li key={line.id} className="scorecard-line">
+            <strong>{line.label}</strong>
+            <em>
+              {line.points}/{line.maxPoints}
+            </em>
+            <span>{line.detail}</span>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 

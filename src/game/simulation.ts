@@ -11,6 +11,8 @@ import {
   IncidentOutlook,
   MilestoneDefinition,
   PolicyId,
+  ScenarioScorecard,
+  ScorecardLine,
   PlacementPreview,
   PlacementResult,
   StructureType,
@@ -567,6 +569,107 @@ function evaluateMilestoneProgress(
     0,
     1,
   );
+}
+
+function scoreAgainstReviewTarget(value: number, target: number): number {
+  if (target <= 0) {
+    return value > 0 ? 20 : 0;
+  }
+
+  const ratio = value / target;
+  if (ratio >= 1) {
+    return clamp(Math.round(14 + (ratio - 1) * 12), 14, 20);
+  }
+
+  return clamp(Math.round(ratio * 14), 0, 13);
+}
+
+function scorecardGrade(score: number): ScenarioScorecard["grade"] {
+  if (score >= 90) {
+    return "A";
+  }
+  if (score >= 75) {
+    return "B";
+  }
+  if (score >= 60) {
+    return "C";
+  }
+  if (score >= 45) {
+    return "D";
+  }
+  return "F";
+}
+
+function scorecardVerdict(grade: ScenarioScorecard["grade"], passed: boolean): string {
+  if (passed && (grade === "A" || grade === "B")) {
+    return "The review board would sign this district.";
+  }
+  if (passed) {
+    return "The milestone is met, but the margin is thin.";
+  }
+  if (grade === "D") {
+    return "Several targets are still short of what this scenario asks.";
+  }
+  return "The board cannot sign off while the district is this far short.";
+}
+
+export function buildScenarioScorecard(state: GameState): ScenarioScorecard {
+  const scenario = getScenario(state.scenarioId);
+  const milestone =
+    scenario.milestones[Math.min(Math.max(state.stageIndex, 0), scenario.milestones.length - 1)] ??
+    scenario.milestones[0];
+  const population = Math.round(state.metrics.population);
+  const happiness = Math.round(state.metrics.happiness);
+  const service = Math.round(state.metrics.serviceScore);
+  const traffic = Math.round(state.metrics.trafficScore);
+  const lines: ScorecardLine[] = [
+    {
+      id: "population",
+      label: "Population",
+      detail: `${population.toLocaleString("en-GB")} / ${milestone.targetPopulation.toLocaleString("en-GB")} residents`,
+      points: scoreAgainstReviewTarget(state.metrics.population, milestone.targetPopulation),
+      maxPoints: 20,
+    },
+    {
+      id: "happiness",
+      label: "Public confidence",
+      detail: `${happiness}% / ${milestone.minHappiness}% happiness`,
+      points: scoreAgainstReviewTarget(state.metrics.happiness, milestone.minHappiness),
+      maxPoints: 20,
+    },
+    {
+      id: "treasury",
+      label: "Solvency",
+      detail: `${formatMoney(state.treasury)} / ${formatMoney(milestone.minTreasury)} treasury`,
+      points: scoreAgainstReviewTarget(state.treasury, milestone.minTreasury),
+      maxPoints: 20,
+    },
+    {
+      id: "services",
+      label: "Services",
+      detail: `${service}% / ${milestone.minServiceScore}% service score`,
+      points: scoreAgainstReviewTarget(state.metrics.serviceScore, milestone.minServiceScore),
+      maxPoints: 20,
+    },
+    {
+      id: "traffic",
+      label: "Movement",
+      detail: `${traffic}% / ${milestone.minTrafficScore}% traffic score`,
+      points: scoreAgainstReviewTarget(state.metrics.trafficScore, milestone.minTrafficScore),
+      maxPoints: 20,
+    },
+  ];
+  const score = lines.reduce((total, line) => total + line.points, 0);
+  const grade = scorecardGrade(score);
+
+  return {
+    grade,
+    score,
+    maxScore: lines.reduce((total, line) => total + line.maxPoints, 0),
+    stageName: milestone.stageName,
+    headline: `${scenario.districtName} scored ${score} against the ${milestone.stageName} bar. ${scorecardVerdict(grade, state.phase === "won")}`,
+    lines,
+  };
 }
 
 function evaluateTutorialCompletion(state: GameState): number {
