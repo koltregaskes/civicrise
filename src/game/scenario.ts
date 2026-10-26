@@ -404,6 +404,13 @@ export const DEFAULT_SCENARIO_ID = northQuay.id;
 
 export const SCENARIOS: ScenarioDefinition[] = [northQuay, rivergate];
 
+export const CHARTER_CAMPAIGN = {
+  id: "charter-review",
+  name: "Charter Review",
+  goal: "Pass North Quay, then Rivergate. Lose either district review and the charter fails.",
+  chapters: [northQuay.id, rivergate.id] as const,
+};
+
 export function getScenario(id: string): ScenarioDefinition {
   return SCENARIOS.find((scenario) => scenario.id === id) ?? northQuay;
 }

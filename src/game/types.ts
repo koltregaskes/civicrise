@@ -15,6 +15,9 @@ export type IncidentId = "gridStrain" | "junctionLock" | "heatwave" | "riverSurg
 export type IncidentOutlook = "Calm" | "Watch" | "Strain" | "Crisis";
 export type Tone = "info" | "success" | "warning" | "danger";
 export type GamePhase = "running" | "won" | "lost";
+export type CampaignStatus = "active" | "won" | "lost";
+export type EndReason = "stress" | "recovery";
+export type ReviewMode = "quality" | "growth";
 export type SimulationSpeed = 0 | 1 | 2 | 3;
 
 export interface GridPoint {
@@ -133,10 +136,20 @@ export interface ActionCounters {
   bulldozed: number;
 }
 
+export interface CampaignProgress {
+  id: string;
+  name: string;
+  chapterIndex: number;
+  chapterCount: number;
+  status: CampaignStatus;
+  carriedGrant: number;
+}
+
 export interface GameState {
   version: number;
   scenarioId: string;
   phase: GamePhase;
+  campaign?: CampaignProgress;
   width: number;
   height: number;
   tiles: Tile[];
@@ -152,6 +165,13 @@ export interface GameState {
   tripAccumulator: number;
   ambientAccumulator: number;
   stressTimer: number;
+  endReason: EndReason | null;
+  reviewWindowDays: number;
+  reviewMode: ReviewMode | null;
+  reviewGrowthStalled: boolean;
+  reviewCensusDay: number;
+  reviewCensusPopulation: number;
+  reviewHousingAnchor: number;
   warningAccumulator: number;
   nextCarId: number;
   nextLogId: number;

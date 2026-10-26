@@ -1,4 +1,4 @@
-import { DEFAULT_SCENARIO_ID, POLICY_DEFINITIONS, TOOL_DEFINITIONS, getScenario } from "./scenario";
+import { CHARTER_CAMPAIGN, DEFAULT_SCENARIO_ID, POLICY_DEFINITIONS, TOOL_DEFINITIONS, getScenario } from "./scenario";
 import {
   ActionCounters,
   BannerMessage,
@@ -11,6 +11,7 @@ import {
   IncidentOutlook,
   MilestoneDefinition,
   PolicyId,
+  ReviewMode,
   ScenarioScorecard,
   ScorecardLine,
   PlacementPreview,
@@ -553,21 +554,25 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
+function gateRatio(value: number, target: number): number {
+  if (target <= 0) {
+    return value > 0 ? 1 : 0;
+  }
+
+  return clamp(value / target, 0, 1);
+}
+
 function evaluateMilestoneProgress(
   metrics: CityMetrics,
   milestone: MilestoneDefinition,
   treasury: number,
 ): number {
-  const progressPopulation = metrics.population / milestone.targetPopulation;
-  const progressHappiness = metrics.happiness / milestone.minHappiness;
-  const progressTreasury = treasury / milestone.minTreasury;
-  const progressService = metrics.serviceScore / milestone.minServiceScore;
-  const progressTraffic = metrics.trafficScore / milestone.minTrafficScore;
-
-  return clamp(
-    (progressPopulation + progressHappiness + progressTreasury + progressService + progressTraffic) / 5,
-    0,
-    1,
+  return Math.min(
+    gateRatio(metrics.population, milestone.targetPopulation),
+    gateRatio(metrics.happiness, milestone.minHappiness),
+    gateRatio(treasury, milestone.minTreasury),
+    gateRatio(metrics.serviceScore, milestone.minServiceScore),
+    gateRatio(metrics.trafficScore, milestone.minTrafficScore),
   );
 }
 
@@ -1341,13 +1346,24 @@ function maybeAdvanceMilestones(state: GameState): void {
     );
   }
 
+  clearRecoveryReview(state);
+
   if (state.stageIndex >= scenario.milestones.length) {
     state.phase = "won";
     state.paused = true;
+    const campaign = state.campaign;
+    const lastChapter = !!campaign && campaign.chapterIndex >= campaign.chapterCount - 1;
+    if (campaign) {
+      state.campaign = { ...campaign, status: lastChapter ? "won" : "active" };
+    }
     pushLog(
       state,
-      "Review passed",
-      `${scenario.districtName} has crossed the final review threshold and is ready for presentation.`,
+      lastChapter ? "Charter secured" : "Review passed",
+      lastChapter
+        ? `${scenario.districtName} closed the charter review. The campaign is won.`
+        : campaign
+          ? `${scenario.districtName} has crossed the final review threshold. The next district is waiting.`
+          : `${scenario.districtName} has crossed the final review threshold and is ready for presentation.`,
       "success",
     );
   }
@@ -1434,6 +1450,169 @@ function updateIncidentState(state: GameState, deltaDays: number): void {
   );
 }
 
+const QUALITY_REVIEW_DAYS = 36;
+const GROWTH_CENSUS_DAYS = 24;
+const GROWTH_REVIEW_DAYS = 150;
+const GROWTH_RELIEF = 12;
+
+function clearRecoveryReview(state: GameState): void {
+  state.reviewWindowDays = 0;
+  state.reviewMode = null;
+  state.reviewGrowthStalled = false;
+  state.reviewCensusDay = 0;
+  state.reviewCensusPopulation = 0;
+  state.reviewHousingAnchor = -1;
+}
+
+function unmetGateLabels(state: GameState, milestone: MilestoneDefinition): string[] {
+  const missing: string[] = [];
+  if (state.metrics.population < milestone.targetPopulation) {
+    missing.push("residents");
+  }
+  if (state.metrics.happiness < milestone.minHappiness) {
+    missing.push("happiness");
+  }
+  if (state.treasury < milestone.minTreasury) {
+    missing.push("treasury");
+  }
+  if (state.metrics.serviceScore < milestone.minServiceScore) {
+    missing.push("services");
+  }
+  if (state.metrics.trafficScore < milestone.minTrafficScore) {
+    missing.push("traffic");
+  }
+  return missing;
+}
+
+function failRecoveryReview(state: GameState, title: string, body: string): void {
+  state.phase = "lost";
+  state.paused = true;
+  state.endReason = "recovery";
+  state.reviewMode = null;
+  if (state.campaign) {
+    state.campaign = { ...state.campaign, status: "lost" };
+  }
+  pushLog(state, title, body, "danger");
+  setBanner(state, title, body, "danger", true);
+}
+
+function maybeResolveRecoveryReview(state: GameState, deltaDays: number): void {
+  if (state.phase !== "running") {
+    return;
+  }
+
+  const scenario = getScenario(state.scenarioId);
+  const milestone = scenario.milestones[state.stageIndex];
+  if (!milestone || state.day < 18 || state.metrics.population < 60) {
+    state.reviewWindowDays = 0;
+    state.reviewMode = null;
+    return;
+  }
+
+  const missing = unmetGateLabels(state, milestone);
+  if (missing.length === 0) {
+    state.reviewWindowDays = 0;
+    state.reviewMode = null;
+    state.reviewGrowthStalled = false;
+    return;
+  }
+
+  const populationMet = state.metrics.population >= milestone.targetPopulation;
+  const qualityMissed = missing.some((label) => label !== "residents");
+
+  if (state.reviewCensusDay <= 0) {
+    state.reviewCensusDay = state.day;
+    state.reviewCensusPopulation = state.metrics.population;
+  } else if (state.day - state.reviewCensusDay >= GROWTH_CENSUS_DAYS) {
+    const gained = state.metrics.population - state.reviewCensusPopulation;
+    state.reviewGrowthStalled = gained < GROWTH_RELIEF;
+    state.reviewCensusDay = state.day;
+    state.reviewCensusPopulation = state.metrics.population;
+  }
+
+  const mode: ReviewMode | null =
+    populationMet && qualityMissed ? "quality" : state.reviewGrowthStalled ? "growth" : null;
+
+  if (mode === null) {
+    state.reviewWindowDays = 0;
+    state.reviewMode = null;
+    return;
+  }
+
+  if (mode === "growth") {
+    if (state.reviewHousingAnchor < 0) {
+      state.reviewHousingAnchor = state.actions.residentialPlaced;
+    } else if (state.actions.residentialPlaced > state.reviewHousingAnchor) {
+      state.reviewHousingAnchor = state.actions.residentialPlaced;
+      state.reviewWindowDays = 0;
+      state.reviewGrowthStalled = false;
+      state.reviewCensusDay = state.day;
+      state.reviewCensusPopulation = state.metrics.population;
+      pushLog(
+        state,
+        "Housing restarted the review",
+        "New homes restarted the recovery window. The next residents have to show up before it closes.",
+        "info",
+      );
+      setBanner(
+        state,
+        "Housing restarted the review",
+        `${scenario.districtName} has new homes on the books. Grow by ${GROWTH_RELIEF} residents, or meet every ${milestone.stageName} target, before the window returns.`,
+        "info",
+        true,
+      );
+      return;
+    }
+  }
+
+  if (state.reviewMode !== mode) {
+    state.reviewMode = mode;
+    state.reviewWindowDays = 0;
+  }
+
+  const limit = mode === "quality" ? QUALITY_REVIEW_DAYS : GROWTH_REVIEW_DAYS;
+  const opening = state.reviewWindowDays <= 0;
+  state.reviewWindowDays += deltaDays;
+
+  if (opening) {
+    const body =
+      mode === "quality"
+        ? `${scenario.districtName} has the residents for ${milestone.stageName}, but ${missing.join(", ")} still miss the gate. Meet every target within ${limit} days or this chapter fails.`
+        : `${scenario.districtName} has stopped short of ${milestone.stageName}. Still short: ${missing.join(", ")}. Add residents or meet every target within ${limit} days, or this chapter fails.`;
+    pushLog(state, "Recovery review opened", body, "warning");
+    setBanner(state, "Recovery review opened", body, "warning", true);
+  }
+
+  if (state.reviewWindowDays < limit) {
+    return;
+  }
+
+  const body =
+    mode === "quality"
+      ? `${scenario.districtName} stayed short on ${missing.join(", ")} when the recovery review closed.`
+      : `${scenario.districtName} never climbed out of the stall on ${milestone.stageName}. The recovery review has closed.`;
+  failRecoveryReview(state, "Recovery review closed", body);
+}
+
+export function getRecoveryReview(state: GameState): { mode: ReviewMode; daysLeft: number; summary: string } | null {
+  if (state.phase !== "running" || !state.reviewMode || state.reviewWindowDays <= 0) {
+    return null;
+  }
+
+  const limit = state.reviewMode === "quality" ? QUALITY_REVIEW_DAYS : GROWTH_REVIEW_DAYS;
+  const daysLeft = Math.max(1, Math.ceil(limit - state.reviewWindowDays));
+  const summary =
+    state.reviewMode === "quality"
+      ? `Recovery review: ${daysLeft} days left. Residents are on target, but another gate is still short.`
+      : `Recovery review: ${daysLeft} days left. Population has stalled short of this milestone.`;
+
+  return {
+    mode: state.reviewMode,
+    daysLeft,
+    summary,
+  };
+}
+
 function maybeLose(state: GameState, deltaDays: number): void {
   if (state.phase !== "running") {
     return;
@@ -1453,6 +1632,10 @@ function maybeLose(state: GameState, deltaDays: number): void {
   if (state.stressTimer >= 2.6) {
     state.phase = "lost";
     state.paused = true;
+    state.endReason = "stress";
+    if (state.campaign) {
+      state.campaign = { ...state.campaign, status: "lost" };
+    }
     pushLog(
       state,
       "District review failed",
@@ -1501,6 +1684,13 @@ export function createGameState(scenarioId = DEFAULT_SCENARIO_ID): GameState {
     tripAccumulator: 0,
     ambientAccumulator: 0,
     stressTimer: 0,
+    endReason: null,
+    reviewWindowDays: 0,
+    reviewMode: null,
+    reviewGrowthStalled: false,
+    reviewCensusDay: 0,
+    reviewCensusPopulation: 0,
+    reviewHousingAnchor: -1,
     warningAccumulator: 0,
     nextCarId: 1,
     nextLogId: 1,
@@ -1531,6 +1721,98 @@ export function createGameState(scenarioId = DEFAULT_SCENARIO_ID): GameState {
   return state;
 }
 
+export function createCampaignState(): GameState {
+  const state = createGameState(CHARTER_CAMPAIGN.chapters[0]);
+  state.campaign = {
+    id: CHARTER_CAMPAIGN.id,
+    name: CHARTER_CAMPAIGN.name,
+    chapterIndex: 0,
+    chapterCount: CHARTER_CAMPAIGN.chapters.length,
+    status: "active",
+    carriedGrant: 0,
+  };
+  const scenario = getScenario(state.scenarioId);
+  setBanner(
+    state,
+    `${CHARTER_CAMPAIGN.name}: chapter 1 of ${CHARTER_CAMPAIGN.chapters.length}`,
+    `${CHARTER_CAMPAIGN.goal} This chapter is ${scenario.districtName}.`,
+    "info",
+    true,
+  );
+  pushLog(state, CHARTER_CAMPAIGN.name, CHARTER_CAMPAIGN.goal, "info");
+  return state;
+}
+
+export function continueCampaign(previous: GameState): GameState | null {
+  const campaign = previous.campaign;
+  if (!campaign || previous.phase !== "won" || campaign.status === "won") {
+    return null;
+  }
+
+  const nextIndex = campaign.chapterIndex + 1;
+  if (nextIndex >= campaign.chapterCount) {
+    return null;
+  }
+
+  const state = createGameState(CHARTER_CAMPAIGN.chapters[nextIndex]);
+  const carry = Math.max(0, Math.round(previous.treasury * 0.2));
+  state.treasury += carry;
+  state.campaign = {
+    ...campaign,
+    chapterIndex: nextIndex,
+    status: "active",
+    carriedGrant: carry,
+  };
+  const scenario = getScenario(state.scenarioId);
+  pushLog(
+    state,
+    "Next district",
+    `${scenario.districtName} opens as chapter ${nextIndex + 1}. Carried grant: ${formatMoney(carry)}.`,
+    "success",
+  );
+  setBanner(
+    state,
+    `${campaign.name}: chapter ${nextIndex + 1} of ${campaign.chapterCount}`,
+    `${CHARTER_CAMPAIGN.goal} This chapter is ${scenario.districtName}. Carried grant: ${formatMoney(carry)}.`,
+    "info",
+    true,
+  );
+  return state;
+}
+
+export function retryCampaignChapter(previous: GameState): GameState | null {
+  const campaign = previous.campaign;
+  if (!campaign || campaign.status === "won") {
+    return null;
+  }
+
+  const state = createGameState(previous.scenarioId);
+  const carriedGrant = Math.max(0, Math.round(campaign.carriedGrant ?? 0));
+  state.treasury += carriedGrant;
+  state.campaign = {
+    ...campaign,
+    status: "active",
+    carriedGrant,
+  };
+  if (carriedGrant > 0) {
+    const scenario = getScenario(state.scenarioId);
+    pushLog(
+      state,
+      "Chapter restarted",
+      `${scenario.districtName} starts again with the carried grant of ${formatMoney(carriedGrant)}.`,
+      "info",
+    );
+    setBanner(
+      state,
+      `${campaign.name}: chapter ${campaign.chapterIndex + 1} of ${campaign.chapterCount}`,
+      `${CHARTER_CAMPAIGN.goal} This chapter is ${scenario.districtName}. Carried grant kept: ${formatMoney(carriedGrant)}.`,
+      "info",
+      true,
+    );
+  }
+  return state;
+}
+
 export function rehydrateGameState(rawState: GameState): GameState {
   const scenario = getScenario(rawState.scenarioId);
   const state: GameState = {
@@ -1547,8 +1829,22 @@ export function rehydrateGameState(rawState: GameState): GameState {
       ...createDefaultPolicies(),
       ...rawState.policies,
     },
+    campaign: rawState.campaign
+      ? {
+          ...rawState.campaign,
+          carriedGrant: Math.max(0, rawState.campaign.carriedGrant ?? 0),
+        }
+      : undefined,
     activeIncident: rawState.activeIncident ?? null,
     incidentCooldown: rawState.incidentCooldown ?? 0,
+    endReason: rawState.endReason === "stress" || rawState.endReason === "recovery" ? rawState.endReason : null,
+    reviewWindowDays: Math.max(0, rawState.reviewWindowDays ?? 0),
+    reviewMode: rawState.reviewMode === "quality" || rawState.reviewMode === "growth" ? rawState.reviewMode : null,
+    reviewGrowthStalled: Boolean(rawState.reviewGrowthStalled),
+    reviewCensusDay: Math.max(0, rawState.reviewCensusDay ?? 0),
+    reviewCensusPopulation: Math.max(0, rawState.reviewCensusPopulation ?? 0),
+    reviewHousingAnchor:
+      typeof rawState.reviewHousingAnchor === "number" ? rawState.reviewHousingAnchor : -1,
     metrics: createEmptyMetrics(
       scenario.milestones[Math.min(rawState.stageIndex, scenario.milestones.length - 1)]?.stageName ?? "Pilot",
     ),
@@ -1639,6 +1935,7 @@ export function advanceGameState(state: GameState, deltaSeconds: number): void {
   maybeAdvanceMilestones(state);
   maybeUpdateTutorialProgress(state);
   maybeLose(state, deltaDays);
+  maybeResolveRecoveryReview(state, deltaDays);
 }
 
 function canBuildOnTile(tile: Tile): boolean {
