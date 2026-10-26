@@ -17,6 +17,7 @@ import {
   evaluatePlacement,
   formatMoney,
   getCurrentMilestone,
+  getRecoveryReview,
   getTile,
   getTutorialStatus,
   setGamePaused,
@@ -134,6 +135,11 @@ function getPlannerNotes(state: GameState): string[] {
     state.metrics.zoneCounts.residential +
     state.metrics.zoneCounts.commercial +
     state.metrics.zoneCounts.industrial;
+
+  const recovery = getRecoveryReview(state);
+  if (recovery) {
+    notes.unshift(recovery.summary);
+  }
 
   if (state.actions.playerRoads < 8) {
     notes.push("Extend roads off the fixed boulevard before filling the interior with zones.");
@@ -397,18 +403,27 @@ function App() {
       const minimumRenderInterval = hidden ? 280 : state.paused ? 150 : 0;
 
       if (shouldSimulate) {
+        const phaseBefore = state.phase;
         advanceGameState(state, deltaSeconds);
         audioRef.current?.updateMix(state.cars.length, state.metrics.servicePressure);
 
         snapshotTimer += deltaSeconds;
         saveTimer += deltaSeconds;
+        const ended = state.phase !== phaseBefore;
 
-        if (snapshotTimer >= 0.16) {
+        if (snapshotTimer >= 0.16 || ended) {
           const snapshot = snapshotGameState(state);
-          startTransition(() => {
+          if (ended) {
             setViewState(snapshot);
-          });
+          } else {
+            startTransition(() => {
+              setViewState(snapshot);
+            });
+          }
           snapshotTimer = 0;
+          if (ended) {
+            saveTimer = 4.5;
+          }
         }
 
         if (saveTimer >= 4.5) {
@@ -515,6 +530,7 @@ function App() {
   const tutorialStatus = activeState ? getTutorialStatus(activeState) : { completed: 0, activeIndex: 0, total: 0 };
   const activeTutorial = activeScenario.tutorial[tutorialStatus.activeIndex];
   const milestoneChecklist = activeState ? getMilestoneChecklist(activeState, currentMilestone) : [];
+  const recoveryReview = activeState ? getRecoveryReview(activeState) : null;
   const plannerNotes = activeState ? getPlannerNotes(activeState) : [];
   const activePolicyCount = activeState
     ? Object.values(activeState.policies).filter(Boolean).length
@@ -975,6 +991,7 @@ function App() {
                     ))}
                   </div>
                 )}
+                {recoveryReview && <p className="recovery-note">{recoveryReview.summary}</p>}
               </section>
 
               <section className="panel policy-panel">
@@ -1115,12 +1132,16 @@ function App() {
                   {activeState.campaign?.status === "won"
                     ? "North Quay and Rivergate both cleared review. Start a new charter or return to the title."
                     : activeState.campaign?.status === "lost"
-                      ? "The charter fails if either district review fails. Retry this chapter or return to the title."
+                      ? activeState.endReason === "recovery"
+                        ? "The recovery review closed with milestone targets still unmet, so the charter fails. Retry this chapter or return to the title."
+                        : "The charter fails if either district review fails. Retry this chapter or return to the title."
                       : activeState.campaign && activeState.phase === "won"
                         ? CHARTER_CAMPAIGN.goal
                         : activeState.phase === "won"
                           ? "This run proved the current district can carry zoning, transport, policy, budget pressure, and service pressure all the way through its scenario arc."
-                          : "Take another pass with steadier services, cleaner transport, and a healthier treasury before the next review."}
+                          : activeState.endReason === "recovery"
+                            ? "The recovery review closed before every milestone target was met. Meet the open gates next time, or bring the population back up before the window ends."
+                            : "Take another pass with steadier services, cleaner transport, and a healthier treasury before the next review."}
                 </p>
                 <ScenarioScorecardPanel state={activeState} />
                 <div className="overlay-actions">

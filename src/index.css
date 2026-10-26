@@ -538,6 +538,15 @@ button {
   background: rgba(17, 42, 38, 0.48);
 }
 
+.recovery-note {
+  margin: 14px 0 0;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(72, 36, 18, 0.55);
+  border: 1px solid rgba(255, 184, 104, 0.35);
+  color: #ffd7a8;
+}
+
 .metric-row {
   display: grid;
   gap: 8px;
