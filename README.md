@@ -50,7 +50,7 @@ Supported query params:
 
 The default review slice is a curated paused Rivergate city so reviewers land in a stable mid-game state without manual setup. Review mode intentionally ignores local save data so capture and verification runs do not overwrite an in-progress player district.
 
-To refresh the shared evidence pack and contract files in `W:\Repos\_My Games\LOCAL-ONLY\captures\civicrise`, run:
+To refresh the shared evidence pack and contract files in `A:\Workspaces\999-archive\W-ROOT\repos\_My Games\LOCAL-ONLY\captures\civicrise` (archived; choose a new evidence folder before re-running), run:
 
 - `npm run review:pack`
 
