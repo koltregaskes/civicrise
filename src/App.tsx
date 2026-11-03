@@ -400,7 +400,13 @@ function App() {
         snapshotTimer += deltaSeconds;
         saveTimer += deltaSeconds;
 
-        if (snapshotTimer >= 0.16) {
+        // A won or lost review pauses the sim inside advanceGameState, so later
+        // frames stop simulating and stop snapshotting. Flush that final state
+        // now, or the HUD freezes on the last mid-run snapshot and the outcome
+        // panel never opens.
+        const simulationStopped = state.paused || state.phase !== "running";
+
+        if (snapshotTimer >= 0.16 || simulationStopped) {
           const snapshot = snapshotGameState(state);
           startTransition(() => {
             setViewState(snapshot);
@@ -408,7 +414,7 @@ function App() {
           snapshotTimer = 0;
         }
 
-        if (saveTimer >= 4.5) {
+        if (saveTimer >= 4.5 || simulationStopped) {
           if (!BOOT_CONFIG.review) {
             const payload = saveGame(snapshotGameState(state));
             if (payload) {
