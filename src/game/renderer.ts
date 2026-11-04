@@ -31,15 +31,43 @@ interface ScreenPoint {
 
 const TILE_ORDER_CACHE = new Map<string, GridPoint[]>();
 
+// Unscaled room the map needs around tile (0, 0)'s centre: the tallest tier-3
+// building rises about 62px above a tile centre, and the tile art's side face
+// hangs about 31px below it.
+const MAP_HEADROOM = 64;
+const MAP_FOOTROOM = 32;
+const MAP_PADDING = 12;
+
+function clampOrigin(preferred: number, min: number, max: number): number {
+  return min > max ? (min + max) / 2 : Math.min(Math.max(preferred, min), max);
+}
+
 function getViewport(state: GameState, width: number, height: number): Viewport {
   const worldWidth = (state.width + state.height) * (TILE_WIDTH / 2);
   const worldHeight = (state.width + state.height) * (TILE_HEIGHT / 2);
-  const scale = Math.min(width / (worldWidth * 1.08), height / (worldHeight * 1.1), 1.28);
 
+  // Map bounds relative to tile (0, 0)'s centre, before scaling.
+  const left = -state.height * (TILE_WIDTH / 2);
+  const right = state.width * (TILE_WIDTH / 2);
+  const top = -MAP_HEADROOM;
+  const bottom = (state.width + state.height - 2) * (TILE_HEIGHT / 2) + MAP_FOOTROOM;
+
+  const scale = Math.max(0.05, Math.min(
+    width / (worldWidth * 1.08),
+    height / (worldHeight * 1.1),
+    1.28,
+    // Never larger than what fits, so all four tips stay on a short canvas.
+    (width - MAP_PADDING * 2) / (right - left),
+    (height - MAP_PADDING * 2) / (bottom - top),
+  ));
+
+  // Centre the diamond across the canvas (the grid is wider than it is deep, so
+  // a fixed originX pushed the right tip off). Keep the usual top offset,
+  // raised only as far as needed to keep the bottom tip on screen.
   return {
     scale,
-    originX: width * 0.52,
-    originY: Math.max(84, height * 0.16),
+    originX: width / 2 - ((left + right) / 2) * scale,
+    originY: clampOrigin(Math.max(84, height * 0.16), MAP_PADDING - top * scale, height - MAP_PADDING - bottom * scale),
   };
 }
 
@@ -802,11 +830,12 @@ export function pickTileFromCanvas(
   const localY = clientY - rect.top;
   const viewport = getViewport(state, rect.width, rect.height);
 
-  const gridX = Math.floor(
+  // Tiles are drawn centred on tileToScreen, so round to the nearest centre.
+  const gridX = Math.round(
     (localY - viewport.originY) / (TILE_HEIGHT * viewport.scale) +
       (localX - viewport.originX) / (TILE_WIDTH * viewport.scale),
   );
-  const gridY = Math.floor(
+  const gridY = Math.round(
     (localY - viewport.originY) / (TILE_HEIGHT * viewport.scale) -
       (localX - viewport.originX) / (TILE_WIDTH * viewport.scale),
   );
