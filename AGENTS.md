@@ -1,6 +1,6 @@
 # Civicrise Repo Instructions
 
-Read `W:\Repos\_My Games\AGENTS.md` first.
+There is no shared games `AGENTS.md` any more: the old `W:\Repos\_My Games` folder was archived on the move to `F:\Repos\games` (copy in `A:\Workspaces\999-archive\W-ROOT\repos\_My Games`). Follow this file and the README.
 
 ## Local Rules
 
