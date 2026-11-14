@@ -742,8 +742,11 @@ export function renderDistrict(
   loadTileset();
 
   const dpr = window.devicePixelRatio || 1;
-  const width = canvas.clientWidth || 1000;
-  const height = canvas.clientHeight || 700;
+  // Size from the viewport card. Reading the canvas itself feeds its bitmap
+  // height back into layout and the district grows every frame.
+  const frame = canvas.parentElement?.getBoundingClientRect();
+  const width = Math.max(1, Math.floor(frame?.width || canvas.clientWidth || 1000));
+  const height = Math.max(1, Math.floor(frame?.height || canvas.clientHeight || 700));
   const targetWidth = Math.floor(width * dpr);
   const targetHeight = Math.floor(height * dpr);
 

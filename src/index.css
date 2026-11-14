@@ -265,9 +265,11 @@ button {
 
 .game-screen {
   display: grid;
-  grid-template-rows: auto 1fr auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   gap: 18px;
-  min-height: calc(100vh - 48px);
+  height: calc(100vh - 48px);
+  min-height: 0;
+  overflow: hidden;
 }
 
 .top-hud,
@@ -332,6 +334,8 @@ button {
   grid-template-columns: minmax(250px, 0.66fr) minmax(0, 2fr) minmax(300px, 0.82fr);
   gap: 18px;
   min-height: 0;
+  height: 100%;
+  overflow: hidden;
 }
 
 .left-rail,
@@ -339,6 +343,8 @@ button {
   display: grid;
   gap: 18px;
   min-height: 0;
+  overflow: auto;
+  align-content: start;
 }
 
 .objective-panel,
@@ -465,12 +471,12 @@ button {
   position: relative;
   overflow: hidden;
   min-height: 0;
+  height: 100%;
 }
 
 .district-canvas {
   width: 100%;
   height: 100%;
-  min-height: 560px;
   display: block;
 }
 
@@ -530,6 +536,15 @@ button {
 .milestone-row.met {
   border-color: rgba(143, 213, 191, 0.22);
   background: rgba(17, 42, 38, 0.48);
+}
+
+.recovery-note {
+  margin: 14px 0 0;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(72, 36, 18, 0.55);
+  border: 1px solid rgba(255, 184, 104, 0.35);
+  color: #ffd7a8;
 }
 
 .metric-row {
@@ -849,8 +864,14 @@ button {
     grid-template-columns: 1fr;
   }
 
-  .district-canvas {
-    min-height: 420px;
+  .game-screen,
+  .game-layout {
+    height: auto;
+    overflow: visible;
+  }
+
+  .viewport-card {
+    height: 420px;
   }
 }
 

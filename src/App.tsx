@@ -6,7 +6,7 @@ import {
   useState,
 } from "react";
 import { CivicriseAudio } from "./game/audio";
-import { DEFAULT_SCENARIO_ID, POLICY_DEFINITIONS, SCENARIOS, TOOL_DEFINITIONS, getScenario } from "./game/scenario";
+import { CHARTER_CAMPAIGN, DEFAULT_SCENARIO_ID, POLICY_DEFINITIONS, SCENARIOS, TOOL_DEFINITIONS, getScenario } from "./game/scenario";
 import {
   advanceGameState,
   applyTool,
@@ -17,12 +17,16 @@ import {
   evaluatePlacement,
   formatMoney,
   getCurrentMilestone,
+  getRecoveryReview,
   getTile,
   getTutorialStatus,
   setGamePaused,
   setGameSpeed,
   snapshotGameState,
   togglePolicy,
+  continueCampaign,
+  createCampaignState,
+  retryCampaignChapter,
   createGameState,
 } from "./game/simulation";
 import { pickTileFromCanvas, renderDistrict } from "./game/renderer";
@@ -131,6 +135,11 @@ function getPlannerNotes(state: GameState): string[] {
     state.metrics.zoneCounts.residential +
     state.metrics.zoneCounts.commercial +
     state.metrics.zoneCounts.industrial;
+
+  const recovery = getRecoveryReview(state);
+  if (recovery) {
+    notes.unshift(recovery.summary);
+  }
 
   if (state.actions.playerRoads < 8) {
     notes.push("Extend roads off the fixed boulevard before filling the interior with zones.");
@@ -394,18 +403,27 @@ function App() {
       const minimumRenderInterval = hidden ? 280 : state.paused ? 150 : 0;
 
       if (shouldSimulate) {
+        const phaseBefore = state.phase;
         advanceGameState(state, deltaSeconds);
         audioRef.current?.updateMix(state.cars.length, state.metrics.servicePressure);
 
         snapshotTimer += deltaSeconds;
         saveTimer += deltaSeconds;
+        const ended = state.phase !== phaseBefore;
 
-        if (snapshotTimer >= 0.16) {
+        if (snapshotTimer >= 0.16 || ended) {
           const snapshot = snapshotGameState(state);
-          startTransition(() => {
+          if (ended) {
             setViewState(snapshot);
-          });
+          } else {
+            startTransition(() => {
+              setViewState(snapshot);
+            });
+          }
           snapshotTimer = 0;
+          if (ended) {
+            saveTimer = 4.5;
+          }
         }
 
         if (saveTimer >= 4.5) {
@@ -512,6 +530,7 @@ function App() {
   const tutorialStatus = activeState ? getTutorialStatus(activeState) : { completed: 0, activeIndex: 0, total: 0 };
   const activeTutorial = activeScenario.tutorial[tutorialStatus.activeIndex];
   const milestoneChecklist = activeState ? getMilestoneChecklist(activeState, currentMilestone) : [];
+  const recoveryReview = activeState ? getRecoveryReview(activeState) : null;
   const plannerNotes = activeState ? getPlannerNotes(activeState) : [];
   const activePolicyCount = activeState
     ? Object.values(activeState.policies).filter(Boolean).length
@@ -547,8 +566,7 @@ function App() {
     });
   }, [activeState?.banner, screen]);
 
-  const launchScenario = async (scenarioId: string) => {
-    const state = BOOT_CONFIG.review ? createReviewGameState(scenarioId) : createGameState(scenarioId);
+  const adoptState = async (state: GameState) => {
     gameRef.current = state;
     setScreen("playing");
     setSelectedTool("road");
@@ -572,6 +590,31 @@ function App() {
     audioRef.current?.playCue("milestone");
   };
 
+  const launchScenario = async (scenarioId: string) => {
+    const state = BOOT_CONFIG.review ? createReviewGameState(scenarioId) : createGameState(scenarioId);
+    await adoptState(state);
+  };
+
+  const launchCampaign = async () => {
+    await adoptState(createCampaignState());
+  };
+
+  const advanceChapter = async () => {
+    const current = gameRef.current;
+    if (!current) {
+      return;
+    }
+    const next = continueCampaign(current);
+    if (!next) {
+      return;
+    }
+    if (!BOOT_CONFIG.review) {
+      clearSavedGame();
+      setSavePayload(null);
+    }
+    await adoptState(next);
+  };
+
   const continueSave = async () => {
     if (!savePayload) {
       return;
@@ -593,6 +636,11 @@ function App() {
     if (!BOOT_CONFIG.review) {
       clearSavedGame();
       setSavePayload(null);
+    }
+    const retried = gameRef.current ? retryCampaignChapter(gameRef.current) : null;
+    if (retried) {
+      await adoptState(retried);
+      return;
     }
     await launchScenario(activeScenario.id);
   };
@@ -669,10 +717,10 @@ function App() {
             <p className="title-tagline">{getScenario(DEFAULT_SCENARIO_ID).tagline}</p>
             <p className="title-story">{getScenario(DEFAULT_SCENARIO_ID).storyBeat}</p>
             <div className="title-badges">
-              <span>Phase 2 prototype</span>
+              <span>Charter Review campaign</span>
               <span>React + TypeScript + Canvas</span>
-              <span>{SCENARIOS.length} scenarios</span>
-              <span>Transit, policies, and crises</span>
+              <span>{SCENARIOS.length} districts</span>
+              <span>{CHARTER_CAMPAIGN.goal}</span>
             </div>
           </div>
 
@@ -702,6 +750,9 @@ function App() {
               <button className="action-button strong" onClick={() => void continueSave()} disabled={!savePayload}>
                 Continue
               </button>
+              <button className="action-button strong" onClick={() => void launchCampaign()}>
+                Charter Review
+              </button>
               <button className="action-button" onClick={() => setShowScenarioPicker(true)}>
                 New City
               </button>
@@ -723,7 +774,11 @@ function App() {
         <section className="game-screen">
           <header className="top-hud panel">
               <div className="hud-cluster">
-                <span className="district-chip">{activeScenario.districtName}</span>
+                <span className="district-chip">
+                  {activeState.campaign
+                    ? `${activeState.campaign.name} ${activeState.campaign.chapterIndex + 1}/${activeState.campaign.chapterCount} · ${activeScenario.districtName}`
+                    : activeScenario.districtName}
+                </span>
                 <div>
                   <p className="micro-label">Treasury</p>
                   <strong>{formatMoney(activeState.treasury)}</strong>
@@ -936,6 +991,7 @@ function App() {
                     ))}
                   </div>
                 )}
+                {recoveryReview && <p className="recovery-note">{recoveryReview.summary}</p>}
               </section>
 
               <section className="panel policy-panel">
@@ -1050,22 +1106,59 @@ function App() {
           {activeState.phase !== "running" && (
             <div className="overlay-backdrop">
               <section className="panel outcome-panel">
-                <p className="micro-label">{activeState.phase === "won" ? "Review ready" : "District failed"}</p>
+                <p className="micro-label">
+                  {activeState.campaign?.status === "won"
+                    ? "Charter secured"
+                    : activeState.campaign?.status === "lost"
+                      ? "Charter failed"
+                      : activeState.campaign && activeState.phase === "won"
+                        ? `Chapter ${activeState.campaign.chapterIndex + 1} of ${activeState.campaign.chapterCount}`
+                        : activeState.phase === "won"
+                          ? "Review ready"
+                          : "District failed"}
+                </p>
                 <h2>
-                  {activeState.phase === "won"
-                    ? `${activeScenario.districtName} reached its final review milestone`
-                    : `${activeScenario.districtName} fell short of review`}
+                  {activeState.campaign?.status === "won"
+                    ? "The charter review is won"
+                    : activeState.campaign?.status === "lost"
+                      ? `${activeScenario.districtName} lost the charter`
+                      : activeState.campaign && activeState.phase === "won"
+                        ? `${activeScenario.districtName} passed. The next district is open.`
+                        : activeState.phase === "won"
+                          ? `${activeScenario.districtName} reached its final review milestone`
+                          : `${activeScenario.districtName} fell short of review`}
                 </h2>
                 <p>
-                  {activeState.phase === "won"
-                    ? "This run proved the current district can carry zoning, transport, policy, budget pressure, and service pressure all the way through its scenario arc."
-                    : "Take another pass with steadier services, cleaner transport, and a healthier treasury before the next review."}
+                  {activeState.campaign?.status === "won"
+                    ? "North Quay and Rivergate both cleared review. Start a new charter or return to the title."
+                    : activeState.campaign?.status === "lost"
+                      ? activeState.endReason === "recovery"
+                        ? "The recovery review closed with milestone targets still unmet, so the charter fails. Retry this chapter or return to the title."
+                        : "The charter fails if either district review fails. Retry this chapter or return to the title."
+                      : activeState.campaign && activeState.phase === "won"
+                        ? CHARTER_CAMPAIGN.goal
+                        : activeState.phase === "won"
+                          ? "This run proved the current district can carry zoning, transport, policy, budget pressure, and service pressure all the way through its scenario arc."
+                          : activeState.endReason === "recovery"
+                            ? "The recovery review closed before every milestone target was met. Meet the open gates next time, or bring the population back up before the window ends."
+                            : "Take another pass with steadier services, cleaner transport, and a healthier treasury before the next review."}
                 </p>
                 <ScenarioScorecardPanel state={activeState} />
                 <div className="overlay-actions">
-                  <button className="action-button strong" onClick={() => void restartScenario()}>
-                    New run
-                  </button>
+                  {activeState.campaign && activeState.phase === "won" && activeState.campaign.status === "active" && (
+                    <button className="action-button strong" onClick={() => void advanceChapter()}>
+                      Next district
+                    </button>
+                  )}
+                  {activeState.campaign?.status === "won" ? (
+                    <button className="action-button strong" onClick={() => void launchCampaign()}>
+                      New charter
+                    </button>
+                  ) : (
+                    <button className="action-button strong" onClick={() => void restartScenario()}>
+                      {activeState.campaign ? "Retry chapter" : "New run"}
+                    </button>
+                  )}
                   <button className="action-button" onClick={returnToTitle}>
                     Back to title
                   </button>
@@ -1091,15 +1184,12 @@ function App() {
                 <span>{scenario.prompt}</span>
               </button>
             ))}
-            <article className="scenario-card locked">
-              <p className="micro-label">Later</p>
-              <h3>Campaign chapters</h3>
-              <p>
-                Finished runs now receive a scenario scorecard. Chained district reviews and long-form campaign chapters
-                are still ahead.
-              </p>
-              <span>Locked for a later milestone</span>
-            </article>
+            <button className="scenario-card" onClick={() => void launchCampaign()}>
+              <p className="micro-label">Campaign</p>
+              <h3>{CHARTER_CAMPAIGN.name}</h3>
+              <p>{CHARTER_CAMPAIGN.goal}</p>
+              <span>North Quay, then Rivergate. Win both or the charter fails.</span>
+            </button>
           </div>
         </Modal>
       )}
